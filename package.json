@@ -1,0 +1,26 @@
+{
+  "name": "office-time-tracker",
+  "version": "1.0.0",
+  "description": "Simple Office Attendance & Working Hours Tracker for IT Coworkers",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "py-start": "python app.py"
+  },
+  "keywords": [
+    "office",
+    "tracker",
+    "attendance",
+    "hybrid-work",
+    "time-tracking"
+  ],
+  "author": "Antigravity AI",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.19.2",
+    "cors": "^2.8.5",
+    "jsonwebtoken": "^9.0.2",
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^11.1.2"
+  }
+}

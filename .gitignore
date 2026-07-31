@@ -1,0 +1,31 @@
+# Database & SQLite files
+*.db
+*.sqlite3
+*.sqlite
+
+# Python cache & virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+
+# Node.js dependencies & logs
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment variables & local configuration
+.env
+.env.local
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
