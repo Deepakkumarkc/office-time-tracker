@@ -1,25 +1,32 @@
 /* ==========================================================================
    OFFICE TRACKER - MAIN APP & ADMIN CONTROLLER
+   Manages dashboard state, admin overview, user session tables, password visibility,
+   and administrative password resets.
    ========================================================================== */
 
 let cachedMonthlyData = null;
 let cachedAdminMasterSessions = [];
 
+// Initialize application on DOM load
 document.addEventListener('DOMContentLoaded', () => {
+  // Set default date input to today's local YYYY-MM-DD
   const dateInput = document.getElementById('selectedDate');
   const d = new Date();
   const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   if (dateInput) dateInput.value = today;
 
+  // Set default monthly report input to current YYYY-MM
   const monthInput = document.getElementById('reportMonth');
   if (monthInput) monthInput.value = today.substring(0, 7);
 
+  // Re-fetch dashboard data when selected date picker changes
   if (dateInput) {
     dateInput.addEventListener('change', () => {
       fetchDashboardData();
     });
   }
 
+  // Check stored auth state and render UI
   checkAuthState();
 });
 
@@ -27,6 +34,10 @@ document.addEventListener('DOMContentLoaded', () => {
    STANDARD DASHBOARD FUNCTIONS
    ========================================================================== */
 
+/**
+ * Fetches dashboard details (active sessions, today's totals, weekly compliance progress)
+ * for the currently selected date.
+ */
 async function fetchDashboardData() {
   const selectedDate = document.getElementById('selectedDate').value;
 

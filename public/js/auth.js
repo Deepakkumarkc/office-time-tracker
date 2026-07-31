@@ -1,9 +1,15 @@
 /* ==========================================================================
    AUTHENTICATION & USER STATE CONTROLLER
+   Manages user registration (@sagitec.com restriction), login authentication,
+   password resets, JWT token persistence, and header creation.
    ========================================================================== */
 
 let currentAuthMode = 'login'; // 'login', 'register', or 'reset'
 
+/**
+ * Switches authentication modal UI tabs between Login, Register, and Password Reset.
+ * @param {string} mode - 'login' | 'register' | 'reset'
+ */
 function switchAuthTab(mode) {
   currentAuthMode = mode;
   const tabLogin = document.getElementById('tabLogin');

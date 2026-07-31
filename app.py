@@ -36,17 +36,37 @@ SENDER_PASSWORD = os.environ.get('SENDER_PASSWORD', '')
 # DATABASE INITIALIZATION & MIGRATIONS
 # ==============================================================================
 
+# Hash password using PBKDF2-HMAC-SHA256 with 100,000 iterations for secure storage
 def hash_password(password, salt=None):
+    """
+    Generates a cryptographically secure SHA-256 hash using PBKDF2 with salt.
+    :param password: Plain-text user password string
+    :param salt: Optional 16-byte hex salt string. If None, a new random salt is generated.
+    :return: Tuple of (hex_hash, salt)
+    """
     if not salt:
         salt = secrets.token_hex(16)
     key = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 100000)
     return key.hex(), salt
 
+# Verify plain password against stored salt and hash
 def verify_password(password, stored_hash, salt):
+    """
+    Verifies a user password input against stored PBKDF2 hash using constant-time comparison.
+    :param password: Input plain-text password
+    :param stored_hash: Expected hex hash string from DB
+    :param salt: Salt string associated with user record
+    :return: Boolean True if password matches, False otherwise
+    """
     key = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), 100000)
     return hmac.compare_digest(key.hex(), stored_hash)
 
 def init_db():
+    """
+    Initializes SQLite database schema (`database.db`).
+    Creates `users` and `office_sessions` tables if not existing, executes column migrations,
+    and seeds default Admin account (Deepak / Ananth).
+    """
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     
@@ -180,7 +200,12 @@ def auto_cutoff_expired_sessions():
 import threading
 import time
 
+# Start background daemon thread to run session auto-cutoff check every 60 seconds
 def start_auto_cutoff_scheduler():
+    """
+    Launches a background daemon thread that periodically runs `auto_cutoff_expired_sessions()` every minute.
+    Ensures active sessions are automatically closed if forgotten across dates.
+    """
     def loop():
         while True:
             auto_cutoff_expired_sessions()
@@ -189,7 +214,15 @@ def start_auto_cutoff_scheduler():
     t = threading.Thread(target=loop, daemon=True)
     t.start()
 
+# Generate JWT Token (HMAC-SHA256) using pure standard library
 def generate_token(user_id, email, role='USER'):
+    """
+    Constructs and signs a JWT access token valid for 7 days.
+    :param user_id: Integer user ID
+    :param email: User login email
+    :param role: User role string ('USER' or 'ADMIN')
+    :return: Formatted JWT string (header.payload.signature)
+    """
     header = json.dumps({"alg": "HS256", "typ": "JWT"}).encode('utf-8')
     payload = json.dumps({
         "sub": user_id,
@@ -209,7 +242,14 @@ def generate_token(user_id, email, role='USER'):
     sig_str = base64.urlsafe_b64encode(signature).rstrip(b'=').decode('utf-8')
     return f"{unsigned_token}.{sig_str}"
 
+# Decode and verify JWT token payload
 def decode_token(token):
+    """
+    Parses and validates a JWT token string.
+    Checks signature expiration timestamp against current UTC time.
+    :param token: Raw JWT string from Authorization header
+    :return: Decoded payload dictionary if valid, None if invalid or expired
+    """
     if not token or '.' not in token:
         return None
     try:
