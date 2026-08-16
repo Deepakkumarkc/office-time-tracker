@@ -1,5 +1,5 @@
 /* ==========================================================================
-   AUTHENTICATION & USER STATE CONTROLLER
+   AUTHENTICATION & USER STATE CONTROLLER (public/js/auth.js)
    Manages user registration (@sagitec.com restriction), login authentication,
    password resets, JWT token persistence, and header creation.
    ========================================================================== */
@@ -158,6 +158,7 @@ function logoutUser() {
   localStorage.removeItem('office_tracker_token');
   localStorage.removeItem('office_tracker_user');
   stopLiveTimerInterval();
+  if (typeof stopTaskTimerInterval === 'function') stopTaskTimerInterval();
   showToast('Logged out successfully', 'success');
   checkAuthState();
 }
@@ -172,6 +173,7 @@ function checkAuthState() {
   const userProfileBadge = document.getElementById('userProfileBadge');
   const userNameDisplay = document.getElementById('userNameDisplay');
   const userAvatar = document.getElementById('userAvatar');
+  const adminNavGroup = document.getElementById('adminNavGroup');
 
   if (token && user) {
     authScreen.style.display = 'none';
@@ -180,10 +182,17 @@ function checkAuthState() {
     userAvatar.textContent = (user.name || user.email).charAt(0).toUpperCase();
 
     if (user.role === 'ADMIN') {
-      dashboardScreen.style.display = 'none';
-      adminDashboardScreen.style.display = 'block';
-      fetchAdminOverviewData();
+      if (adminNavGroup) adminNavGroup.style.display = 'flex';
+      // Default to tracker view for rich productivity experience
+      dashboardScreen.style.display = 'block';
+      adminDashboardScreen.style.display = 'none';
+      const navBtnTracker = document.getElementById('navBtnTracker');
+      const navBtnAdmin = document.getElementById('navBtnAdmin');
+      if (navBtnTracker) navBtnTracker.classList.add('active');
+      if (navBtnAdmin) navBtnAdmin.classList.remove('active');
+      fetchDashboardData();
     } else {
+      if (adminNavGroup) adminNavGroup.style.display = 'none';
       adminDashboardScreen.style.display = 'none';
       dashboardScreen.style.display = 'block';
       fetchDashboardData();
@@ -193,8 +202,8 @@ function checkAuthState() {
     dashboardScreen.style.display = 'none';
     adminDashboardScreen.style.display = 'none';
     userProfileBadge.style.display = 'none';
+    if (adminNavGroup) adminNavGroup.style.display = 'none';
   }
 }
-
 
 document.getElementById('btnLogout').addEventListener('click', logoutUser);

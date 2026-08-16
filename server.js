@@ -1,298 +1,353 @@
 /**
- * Office Time Tracker - Node.js Express Backend
- * Alternative backend server running on Express, Better-SQLite3, and JSON Web Tokens.
+ * WorkPulse - Node.js Express Backend
+ * Identical API routes and database schema for JavaScript runtime.
  */
 
 const express = require('express');
-const cors = require('cors');
+const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
+const cors = require('cors');
 const jwt = require('jsonwebtoken');
-const bcrypt = require('bcryptjs');
-const Database = require('better-sqlite3');
+const crypto = require('crypto');
+const nodemailer = require('nodemailer');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const JWT_SECRET = process.env.JWT_SECRET || 'office_tracker_secret_key_2026_super_secure';
+const DB_FILE = path.join(__dirname, 'database.db');
+const JWT_SECRET = 'office_tracker_secret_key_2026_super_secure';
 
-// ==============================================================================
-// MIDDLEWARE CONFIGURATION
-// ==============================================================================
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ==============================================================================
-// DATABASE INITIALIZATION & MIGRATIONS (SQLite)
-// ==============================================================================
-const db = new Database(path.join(__dirname, 'database.db'));
+const db = new sqlite3.Database(DB_FILE, (err) => {
+  if (err) console.error('Failed to open database:', err);
+  else console.log(`Connected to SQLite database at ${DB_FILE}`);
+});
 
-// Create core tables if they do not exist
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    email TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    role TEXT NOT NULL DEFAULT 'USER',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+// Database initialization
+db.serialize(() => {
+  db.run(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      salt TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'USER',
+      raw_password TEXT,
+      target_office_days INTEGER DEFAULT 3,
+      target_office_hours REAL DEFAULT 24.0,
+      preferred_days TEXT DEFAULT 'Mon,Tue,Wed,Thu,Fri',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
 
-  CREATE TABLE IF NOT EXISTS office_sessions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    date TEXT NOT NULL,
-    work_mode TEXT NOT NULL DEFAULT 'Office',
-    start_time TEXT NOT NULL,
-    stop_time TEXT,
-    duration_seconds INTEGER DEFAULT 0,
-    break_reason TEXT,
-    notes TEXT,
-    status TEXT NOT NULL DEFAULT 'IN_OFFICE',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users (id)
-  );
-`);
+  db.run(`
+    CREATE TABLE IF NOT EXISTS office_sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      date TEXT NOT NULL,
+      work_mode TEXT NOT NULL DEFAULT 'Office',
+      start_time TEXT NOT NULL,
+      stop_time TEXT,
+      duration_seconds INTEGER DEFAULT 0,
+      break_reason TEXT,
+      notes TEXT,
+      status TEXT NOT NULL DEFAULT 'IN_OFFICE',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users (id)
+    )
+  `);
 
-// Migrations
-try {
-  const uCols = db.pragma('table_info(users)').map(c => c.name);
-  if (!uCols.includes('role')) db.exec("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'USER';");
+  db.run(`
+    CREATE TABLE IF NOT EXISTS tasks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      session_id INTEGER,
+      date TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT,
+      category TEXT DEFAULT 'Other',
+      work_mode TEXT DEFAULT 'Office',
+      start_time TEXT NOT NULL,
+      stop_time TEXT,
+      duration_seconds INTEGER DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'IN_PROGRESS',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users (id),
+      FOREIGN KEY (session_id) REFERENCES office_sessions (id) ON DELETE SET NULL
+    )
+  `);
+});
 
-  const sCols = db.pragma('table_info(office_sessions)').map(c => c.name);
-  if (!sCols.includes('break_reason')) db.exec('ALTER TABLE office_sessions ADD COLUMN break_reason TEXT;');
-  if (!sCols.includes('notes')) db.exec('ALTER TABLE office_sessions ADD COLUMN notes TEXT;');
-} catch (e) {
-  console.log('Migration check complete.');
-}
-
-// Seed Admin: Deepak / Ananth
-const adminHash = bcrypt.hashSync('Ananth', 10);
-const existingAdmin = db.prepare("SELECT id FROM users WHERE LOWER(email) = 'deepak@office.com'").get();
-if (existingAdmin) {
-  db.prepare("UPDATE users SET password_hash = ?, role = 'ADMIN' WHERE id = ?").run(adminHash, existingAdmin.id);
-} else {
-  db.prepare("INSERT INTO users (name, email, password_hash, role) VALUES ('Deepak', 'deepak@office.com', ?, 'ADMIN')").run(adminHash);
-}
-
-// Auto-Cutoff Helper: Automatically closes active sessions left open on past dates or past 23:59:59
-function autoCutoffExpiredSessions() {
-  /**
-   * Scans database for sessions with status 'IN_OFFICE' and no stop_time.
-   * If session date is past, caps stop_time to 23:59:59 of that date and updates status to 'AUTO_CUTOFF'.
-   */
-  try {
-    const todayStr = new Date().toISOString().substring(0, 10);
-    const activeSessions = db.prepare('SELECT id, date, start_time FROM office_sessions WHERE status = "IN_OFFICE" AND stop_time IS NULL').all();
-
-    activeSessions.forEach(s => {
-      const isPastDate = s.date < todayStr;
-      let shouldCutoff = isPastDate;
-
-      if (!shouldCutoff) {
-        try {
-          const sessionEndDt = new Date(`${s.date}T23:59:59`);
-          if (new Date() > sessionEndDt) {
-            shouldCutoff = true;
-          }
-        } catch (e) {}
-      }
-
-      if (shouldCutoff) {
-        const cutoffStopTime = `${s.date}T23:59:59`;
-        let durationSeconds = 0;
-        try {
-          const startDt = new Date(s.start_time);
-          const stopDt = new Date(cutoffStopTime);
-          durationSeconds = Math.max(0, Math.floor((stopDt - startDt) / 1000));
-        } catch (e) {}
-
-        db.prepare(`
-          UPDATE office_sessions 
-          SET stop_time = ?, duration_seconds = ?, break_reason = 'Auto Cutoff (Forgot to stop timer)', status = 'AUTO_CUTOFF'
-          WHERE id = ?
-        `).run(cutoffStopTime, durationSeconds, s.id);
-      }
-    });
-  } catch (err) {
-    console.error('[Auto Cutoff Error]', err);
-  }
-}
-
-// Run auto-cutoff ticker every 60 seconds
-setInterval(autoCutoffExpiredSessions, 60000);
-autoCutoffExpiredSessions();
-
-// JWT Authentication Middleware: Protects private API endpoints
 function authenticateToken(req, res, next) {
-  autoCutoffExpiredSessions();
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
-  if (!token) return res.status(401).json({ message: 'Unauthorized' });
+  if (!token) return res.status(401).json({ message: 'Authorization token required' });
 
   jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) return res.status(401).json({ message: 'Invalid token' });
+    if (err) return res.status(403).json({ message: 'Token is invalid or expired' });
     req.user = user;
     next();
   });
 }
 
-// Routes
-app.post('/api/auth/register', (req, res) => {
-  const { name, email, password } = req.body;
-  if (!name || !email || !password) {
-    return res.status(400).json({ message: 'All fields are required.' });
-  }
-
-  const cleanEmail = email.trim().toLowerCase();
-  if (!cleanEmail.endsWith('@sagitec.com')) {
-    return res.status(400).json({ message: 'Registration is restricted to official @sagitec.com email addresses.' });
-  }
-
-  const hash = bcrypt.hashSync(password, 10);
-
-  try {
-    const stmt = db.prepare("INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, 'USER')");
-    const info = stmt.run(name, cleanEmail, hash);
-    const user = { id: info.lastInsertRowid, name, email: cleanEmail, role: 'USER' };
-    const token = jwt.sign({ sub: user.id, email: user.email, role: 'USER' }, JWT_SECRET, { expiresIn: '7d' });
-    res.status(201).json({ message: 'Registration successful!', token, user });
-  } catch (err) {
-    res.status(400).json({ message: 'Email already registered.' });
-  }
-});
-
-app.post('/api/auth/login', (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) return res.status(400).json({ message: 'Email/Username and password required.' });
-
-  const cleanIdentifier = email.trim().toLowerCase();
-  const user = db.prepare('SELECT * FROM users WHERE LOWER(email) = ? OR LOWER(name) = ?').get(cleanIdentifier, cleanIdentifier);
-
-  if (!user || !bcrypt.compareSync(password, user.password_hash)) {
-    return res.status(401).json({ message: 'Invalid credentials.' });
-  }
-
-  const role = user.role || 'USER';
-  const token = jwt.sign({ sub: user.id, email: user.email, role }, JWT_SECRET, { expiresIn: '7d' });
-  res.json({
-    message: 'Logged in successfully!',
-    token,
-    user: { id: user.id, name: user.name, email: user.email, role }
+// User settings
+app.get('/api/user/settings', authenticateToken, (req, res) => {
+  db.get('SELECT name, email, role, target_office_days, target_office_hours, preferred_days FROM users WHERE id = ?', [req.user.sub], (err, row) => {
+    if (err || !row) return res.status(404).json({ message: 'User not found' });
+    res.json(row);
   });
 });
 
-app.get('/api/admin/overview', authenticateToken, (req, res) => {
-  if (req.user.role !== 'ADMIN') return res.status(403).json({ message: 'Access Denied: Admin privileges required.' });
-
-  const usersList = db.prepare(`
-    SELECT u.id, u.name, u.email, u.role, u.raw_password, u.created_at,
-           COUNT(s.id) as session_count, COALESCE(SUM(s.duration_seconds), 0) as total_seconds
-    FROM users u
-    LEFT JOIN office_sessions s ON u.id = s.user_id
-    GROUP BY u.id ORDER BY u.id ASC
-  `).all().map(u => ({
-    id: u.id,
-    name: u.name,
-    email: u.email,
-    role: u.role,
-    password: u.raw_password || (u.role === 'ADMIN' ? 'Ananth' : '******'),
-    created_at: u.created_at,
-    session_count: u.session_count,
-    total_hours: Math.floor((u.total_seconds || 0) / 3600),
-    total_minutes: Math.floor(((u.total_seconds || 0) % 3600) / 60)
-  }));
-
-
-  const masterSessions = db.prepare(`
-    SELECT s.id, u.name as employee_name, u.email as employee_email, s.date, s.work_mode,
-           s.start_time, s.stop_time, s.duration_seconds, s.break_reason, s.notes, s.status
-    FROM office_sessions s
-    JOIN users u ON s.user_id = u.id
-    ORDER BY s.id DESC LIMIT 100
-  `).all();
-
-  const activeInOfficeCount = masterSessions.filter(s => s.status === 'IN_OFFICE').length;
-  const totalTeamSeconds = masterSessions.reduce((acc, s) => acc + (s.duration_seconds || 0), 0);
-
-  res.json({
-    stats: {
-      total_users: usersList.length,
-      active_in_office_today: activeInOfficeCount,
-      team_total_hours: Math.floor(totalTeamSeconds / 3600)
-    },
-    users: usersList,
-    master_sessions: masterSessions
-  });
-});
-
-app.post('/api/sessions/edit', authenticateToken, (req, res) => {
-  autoCutoffExpiredSessions();
-  const userId = req.user.sub;
-  const role = req.user.role;
-  const { session_id, stop_time, break_reason, notes } = req.body;
-
-  if (!session_id || !stop_time) {
-    return res.status(400).json({ message: 'Session ID and Stop Time are required.' });
-  }
-
-  const session = db.prepare('SELECT * FROM office_sessions WHERE id = ?').get(session_id);
-  if (!session) {
-    return res.status(404).json({ message: 'Session not found.' });
-  }
-
-  if (session.user_id !== userId && role !== 'ADMIN') {
-    return res.status(403).json({ message: 'Forbidden: Cannot edit another user\'s session.' });
-  }
-
-  let stopTimeIso = stop_time.trim();
-  if (!stopTimeIso.includes('T')) {
-    if (stopTimeIso.split(':').length === 2) stopTimeIso += ':00';
-    stopTimeIso = `${session.date}T${stopTimeIso}`;
-  }
-
-  let durationSeconds = 0;
-  try {
-    const startDt = new Date(session.start_time);
-    const stopDt = new Date(stopTimeIso);
-    durationSeconds = Math.floor((stopDt - startDt) / 1000);
-    if (durationSeconds < 0) {
-      return res.status(400).json({ message: 'Stop time cannot be earlier than start time.' });
+app.post('/api/user/settings', authenticateToken, (req, res) => {
+  const { target_office_days = 3, target_office_hours = 24.0, preferred_days = 'Mon,Tue,Wed,Thu,Fri' } = req.body;
+  db.run(
+    'UPDATE users SET target_office_days = ?, target_office_hours = ?, preferred_days = ? WHERE id = ?',
+    [target_office_days, target_office_hours, preferred_days, req.user.sub],
+    function(err) {
+      if (err) return res.status(500).json({ message: 'Failed to update settings' });
+      res.json({ message: 'Settings saved successfully!' });
     }
-  } catch (err) {
-    return res.status(400).json({ message: 'Invalid stop time format.' });
-  }
+  );
+});
 
-  const finalReason = (break_reason && break_reason.trim()) ? break_reason.trim() : session.break_reason;
-  const finalNotes = (notes !== undefined) ? notes.trim() : session.notes;
+// Start session (Office or Remote)
+app.post('/api/sessions/start', authenticateToken, (req, res) => {
+  const { date = new Date().toISOString().substring(0, 10), work_mode = 'Office', start_time = new Date().toISOString() } = req.body;
+  const statusFlag = work_mode === 'Office' ? 'IN_OFFICE' : 'WORKING_REMOTE';
 
-  db.prepare(`
-    UPDATE office_sessions 
-    SET stop_time = ?, duration_seconds = ?, break_reason = ?, notes = ?, status = 'COMPLETED'
-    WHERE id = ?
-  `).run(stopTimeIso, durationSeconds, finalReason, finalNotes, session_id);
+  db.get(
+    'SELECT id, work_mode FROM office_sessions WHERE user_id = ? AND status IN ("IN_OFFICE", "WORKING_REMOTE") AND stop_time IS NULL',
+    [req.user.sub],
+    (err, row) => {
+      if (row) return res.status(400).json({ message: `An active ${row.work_mode} session is already running.` });
 
-  res.json({
-    message: 'Stop time updated successfully!',
-    duration_seconds: durationSeconds
+      db.run(
+        'INSERT INTO office_sessions (user_id, date, work_mode, start_time, status) VALUES (?, ?, ?, ?, ?)',
+        [req.user.sub, date, work_mode, start_time, statusFlag],
+        function(err) {
+          if (err) return res.status(500).json({ message: 'Failed to start session' });
+          res.status(201).json({ message: `${work_mode} session started!`, session_id: this.lastID });
+        }
+      );
+    }
+  );
+});
+
+// Stop session (Auto-stops active task)
+app.post('/api/sessions/stop', authenticateToken, (req, res) => {
+  const { stop_time = new Date().toISOString(), break_reason = 'End of Workday', notes = '' } = req.body;
+
+  db.get(
+    'SELECT id, start_time, work_mode FROM office_sessions WHERE user_id = ? AND status IN ("IN_OFFICE", "WORKING_REMOTE") AND stop_time IS NULL ORDER BY id DESC LIMIT 1',
+    [req.user.sub],
+    (err, session) => {
+      if (!session) return res.status(400).json({ message: 'No active session found.' });
+
+      const startMs = new Date(session.start_time).getTime();
+      const stopMs = new Date(stop_time).getTime();
+      const durationSeconds = Math.max(0, Math.floor((stopMs - startMs) / 1000));
+
+      db.run(
+        'UPDATE office_sessions SET stop_time = ?, duration_seconds = ?, break_reason = ?, notes = ?, status = "COMPLETED" WHERE id = ?',
+        [stop_time, durationSeconds, break_reason, notes, session.id],
+        function() {
+          // Auto-stop active task
+          db.get(
+            'SELECT id, title, start_time FROM tasks WHERE user_id = ? AND status = "IN_PROGRESS" AND stop_time IS NULL',
+            [req.user.sub],
+            (err, task) => {
+              let autoStopped = null;
+              if (task) {
+                const tStartMs = new Date(task.start_time).getTime();
+                const tDur = Math.max(0, Math.floor((stopMs - tStartMs) / 1000));
+                db.run(
+                  'UPDATE tasks SET stop_time = ?, duration_seconds = ?, description = COALESCE(description, "") || " (Auto-stopped with session end)", status = "COMPLETED" WHERE id = ?',
+                  [stop_time, tDur, task.id]
+                );
+                autoStopped = { id: task.id, title: task.title, duration_seconds: tDur };
+              }
+
+              res.json({
+                message: `${session.work_mode} session stopped.`,
+                duration_seconds: durationSeconds,
+                auto_stopped_task: autoStopped
+              });
+            }
+          );
+        }
+      );
+    }
+  );
+});
+
+// Start task (Strict Active Session requirement & Auto-Switch)
+app.post('/api/tasks/start', authenticateToken, (req, res) => {
+  const { title, category = 'Other', description = '', date = new Date().toISOString().substring(0, 10), start_time = new Date().toISOString(), switch_task = false } = req.body;
+  if (!title) return res.status(400).json({ message: 'Task title is required.' });
+
+  db.get(
+    'SELECT id, work_mode FROM office_sessions WHERE user_id = ? AND date = ? AND status IN ("IN_OFFICE", "WORKING_REMOTE") AND stop_time IS NULL ORDER BY id DESC LIMIT 1',
+    [req.user.sub, date],
+    (err, activeSess) => {
+      if (!activeSess) {
+        return res.status(400).json({ message: 'Start your office session (or remote work session) before starting a task.', requires_session: true });
+      }
+
+      db.get(
+        'SELECT id, title, start_time FROM tasks WHERE user_id = ? AND status = "IN_PROGRESS" AND stop_time IS NULL',
+        [req.user.sub],
+        (err, runningTask) => {
+          if (runningTask && !switch_task) {
+            return res.status(400).json({ message: `You are currently working on '${runningTask.title}'.`, running_task: runningTask, can_switch: true });
+          }
+
+          if (runningTask && switch_task) {
+            const prevMs = new Date(runningTask.start_time).getTime();
+            const nowMs = new Date(start_time).getTime();
+            const prevDur = Math.max(0, Math.floor((nowMs - prevMs) / 1000));
+            db.run('UPDATE tasks SET stop_time = ?, duration_seconds = ?, status = "COMPLETED" WHERE id = ?', [start_time, prevDur, runningTask.id]);
+          }
+
+          db.run(
+            'INSERT INTO tasks (user_id, session_id, date, title, description, category, work_mode, start_time, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, "IN_PROGRESS")',
+            [req.user.sub, activeSess.id, date, title, description, category, activeSess.work_mode, start_time],
+            function(err) {
+              if (err) return res.status(500).json({ message: 'Failed to start task' });
+              res.status(201).json({ message: `Task '${title}' started!`, task: { id: this.lastID, title, category } });
+            }
+          );
+        }
+      );
+    }
+  );
+});
+
+// Dashboard endpoint (7-Day Weekly Attendance Map & Dual Compliance)
+app.get('/api/dashboard', authenticateToken, (req, res) => {
+  const selectedDate = req.query.date || new Date().toISOString().substring(0, 10);
+  const userId = req.user.sub;
+
+  db.get('SELECT name, email, target_office_days, target_office_hours, preferred_days FROM users WHERE id = ?', [userId], (err, user) => {
+    if (err || !user) return res.status(404).json({ message: 'User not found' });
+
+    const targetDays = user.target_office_days || 3;
+    const targetHours = user.target_office_hours || 24.0;
+    const preferredDays = user.preferred_days || 'Mon,Tue,Wed,Thu,Fri';
+    const prefSet = new Set(preferredDays.split(',').map(p => p.trim().substring(0, 3).toUpperCase()));
+
+    db.all('SELECT * FROM office_sessions WHERE user_id = ? AND date = ? ORDER BY start_time ASC', [userId, selectedDate], (err, todaySessions) => {
+      db.all('SELECT * FROM tasks WHERE user_id = ? AND date = ? ORDER BY start_time ASC', [userId, selectedDate], (err, todayTasks) => {
+        
+        // Compute active state
+        const activeSess = (todaySessions || []).find(s => ['IN_OFFICE', 'WORKING_REMOTE'].includes(s.status) && !s.stop_time);
+        const activeTask = (todayTasks || []).find(t => t.status === 'IN_PROGRESS' && !t.stop_time);
+        const currentStatus = activeSess ? activeSess.status : 'OUT_OF_OFFICE';
+
+        let todayOfficeSec = 0;
+        let todayRemoteSec = 0;
+        (todaySessions || []).forEach(s => {
+          if (s.work_mode === 'Office') todayOfficeSec += (s.duration_seconds || 0);
+          else todayRemoteSec += (s.duration_seconds || 0);
+        });
+
+        let todayTaskSec = 0;
+        const categoryBreakdown = {};
+        (todayTasks || []).forEach(t => {
+          const dur = t.duration_seconds || 0;
+          todayTaskSec += dur;
+          const cat = t.category || 'Other';
+          categoryBreakdown[cat] = (categoryBreakdown[cat] || 0) + dur;
+        });
+
+        // 7-Day Monday -> Sunday calculation
+        const selDt = new Date(selectedDate);
+        const dayOfWeek = (selDt.getDay() + 6) % 7; // 0 = Monday, 6 = Sunday
+        const mondayDt = new Date(selDt);
+        mondayDt.setDate(selDt.getDate() - dayOfWeek);
+
+        const dayNamesList = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+        const startOfWeek = mondayDt.toISOString().substring(0, 10);
+        const sundayDt = new Date(mondayDt);
+        sundayDt.setDate(mondayDt.getDate() + 6);
+        const endOfWeek = sundayDt.toISOString().substring(0, 10);
+
+        db.all(
+          'SELECT date, duration_seconds FROM office_sessions WHERE user_id = ? AND work_mode = "Office" AND date >= ? AND date <= ?',
+          [userId, startOfWeek, endOfWeek],
+          (err, weekOfficeSessions) => {
+            const actualDatesSet = new Set();
+            const daySecondsMap = {};
+
+            (weekOfficeSessions || []).forEach(ws => {
+              actualDatesSet.add(ws.date);
+              daySecondsMap[ws.date] = (daySecondsMap[ws.date] || 0) + (ws.duration_seconds || 0);
+            });
+
+            const weeklyDaysMap = [];
+            let totalWeeklySec = 0;
+            const todayStr = new Date().toISOString().substring(0, 10);
+
+            for (let i = 0; i < 7; i++) {
+              const curDt = new Date(mondayDt);
+              curDt.setDate(mondayDt.getDate() + i);
+              const curDateStr = curDt.toISOString().substring(0, 10);
+              const dName = dayNamesList[i];
+              const dSec = daySecondsMap[curDateStr] || 0;
+              const attended = actualDatesSet.has(curDateStr);
+
+              totalWeeklySec += dSec;
+              weeklyDaysMap.push({
+                day_name: dName,
+                date: curDateStr,
+                day_num: curDt.getDate(),
+                attended: attended,
+                day_seconds: dSec,
+                hours: parseFloat((dSec / 3600).toFixed(1)),
+                is_preferred: prefSet.has(dName.toUpperCase()),
+                is_today: curDateStr === todayStr,
+                is_selected: curDateStr === selectedDate
+              });
+            }
+
+            const weeklyOfficeDays = actualDatesSet.size;
+            const weeklyOfficeHours = parseFloat((totalWeeklySec / 3600).toFixed(1));
+
+            res.json({
+              current_status: currentStatus,
+              active_session: activeSess || null,
+              active_task: activeTask || null,
+              today_sessions: todaySessions || [],
+              today_tasks: todayTasks || [],
+              today_total_minutes: Math.floor((todayOfficeSec + todayRemoteSec) / 60),
+              today_office_minutes: Math.floor(todayOfficeSec / 60),
+              today_task_seconds: todayTaskSec,
+              category_breakdown: categoryBreakdown,
+              user_targets: { target_office_days: targetDays, target_office_hours: targetHours, preferred_days: preferredDays },
+              weekly_compliance: {
+                days_completed: weeklyOfficeDays,
+                target_days: targetDays,
+                days_remaining: Math.max(0, targetDays - weeklyOfficeDays),
+                days_percent: Math.min(100, Math.round((weeklyOfficeDays / targetDays) * 100)),
+                hours_completed: weeklyOfficeHours,
+                target_hours: targetHours,
+                hours_remaining: Math.max(0, parseFloat((targetHours - weeklyOfficeHours).toFixed(1))),
+                hours_percent: Math.min(100, Math.round((weeklyOfficeHours / targetHours) * 100)),
+                start_of_week: startOfWeek,
+                end_of_week: endOfWeek,
+                weekly_days_map: weeklyDaysMap
+              }
+            });
+          }
+        );
+      });
+    });
   });
 });
-
-app.post('/api/admin/reset-user-password', authenticateToken, (req, res) => {
-  if (req.user.role !== 'ADMIN') return res.status(403).json({ message: 'Access Denied: Admin privileges required.' });
-
-  const { user_id, new_password } = req.body;
-  if (!user_id || !new_password) return res.status(400).json({ message: 'User ID and new password required.' });
-
-  const user = db.prepare('SELECT name, email FROM users WHERE id = ?').get(user_id);
-  if (!user) return res.status(404).json({ message: 'User not found.' });
-
-  const hash = bcrypt.hashSync(new_password.trim(), 10);
-  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, user_id);
-
-  res.json({ message: `Successfully reset password for employee '${user.name}' (${user.email})!` });
-});
-
 
 app.listen(PORT, () => {
-  console.log(`Server listening on port ${PORT}`);
+  console.log(`Node.js Express Server running on http://localhost:${PORT}`);
 });

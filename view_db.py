@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Database Viewer Utility for Office Time Tracker
-Run this script anytime to inspect users and office session records in SQLite.
+Database Viewer Utility for WorkPulse Office & Task Time Tracker
+Run this script anytime to inspect users, office session records, and task entries in SQLite.
 """
 
 import os
@@ -24,23 +24,23 @@ def view_database():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
 
-    print("==================================================================")
-    print(" USERS TABLE (`users`)")
-    print("==================================================================")
+    print("==========================================================================================")
+    print(" USERS TABLE (`users`) & CONFIGURED WEEKLY REQUIREMENTS")
+    print("==========================================================================================")
 
-    cursor.execute("SELECT id, name, email, created_at FROM users")
+    cursor.execute("SELECT id, name, email, role, target_office_days, target_office_hours, preferred_days, created_at FROM users")
     users = cursor.fetchall()
     if not users:
         print("No users registered yet.")
     else:
-        print(f"{'ID':<4} | {'Name':<20} | {'Email':<30} | {'Registered At'}")
-        print("-" * 75)
+        print(f"{'ID':<4} | {'Name':<15} | {'Email':<28} | {'Role':<6} | {'Target Days':<11} | {'Target Hours':<12} | {'Preferred Days'}")
+        print("-" * 105)
         for u in users:
-            print(f"{u[0]:<4} | {u[1]:<20} | {u[2]:<30} | {u[3]}")
+            print(f"{u[0]:<4} | {u[1]:<15} | {u[2]:<28} | {u[3]:<6} | {u[4] or 3:<11} | {u[5] or 24.0:<12} | {u[6] or 'Mon-Fri'}")
 
-    print("\n" + "=" * 90)
-    print(" OFFICE SESSIONS TABLE (`office_sessions`)")
-    print("==================================================================")
+    print("\n" + "=" * 115)
+    print(" OFFICE SESSIONS TABLE (`office_sessions`) - ATTENDANCE SOURCE OF TRUTH")
+    print("==========================================================================================")
 
     cursor.execute("""
         SELECT s.id, u.name, s.date, s.work_mode, s.start_time, s.stop_time, 
@@ -69,8 +69,36 @@ def view_database():
 
             print(f"{s[0]:<4} | {emp_name:<15} | {s[2]:<10} | {s[3]:<8} | {start_fmt:<12} | {stop_fmt:<12} | {dur_str:<10} | {reason:<18} | {status}")
 
+    print("\n" + "=" * 115)
+    print(" WORK TASKS TABLE (`tasks`) - DETAILED WORK ACTIVITIES INSIDE OFFICE TIME")
+    print("==========================================================================================")
+
+    cursor.execute("""
+        SELECT t.id, u.name, t.date, t.title, t.category, t.start_time, t.stop_time, 
+               t.duration_seconds, t.status 
+        FROM tasks t
+        LEFT JOIN users u ON t.user_id = u.id
+        ORDER BY t.id DESC
+    """)
+    tasks = cursor.fetchall()
+    if not tasks:
+        print("No tasks recorded yet.")
+    else:
+        print(f"{'ID':<4} | {'Employee':<15} | {'Date':<10} | {'Category':<14} | {'Task Title':<28} | {'Start':<9} | {'Stop':<9} | {'Duration':<10} | {'Status'}")
+        print("-" * 115)
+        for t in tasks:
+            emp_name = t[1] or f"User {t[0]}"
+            start_fmt = t[5].split('T')[1][:5] if t[5] and 'T' in t[5] else (t[5][:5] if t[5] else '--')
+            stop_fmt = t[6].split('T')[1][:5] if t[6] and 'T' in t[6] else (t[6][:5] if t[6] else 'Running')
+            
+            dur_sec = t[7] or 0
+            h, m = dur_sec // 3600, (dur_sec % 3600) // 60
+            dur_str = f"{h}h {m}m" if h > 0 else f"{m}m {dur_sec%60}s"
+
+            print(f"{t[0]:<4} | {emp_name:<15} | {t[2]:<10} | {t[4] or 'Other':<14} | {t[3][:26]:<28} | {start_fmt:<9} | {stop_fmt:<9} | {dur_str:<10} | {t[8]}")
+
     conn.close()
-    print("==================================================================")
+    print("==========================================================================================")
 
 if __name__ == '__main__':
     view_database()

@@ -1,0 +1,2 @@
+# WorkPulse Office & Task Tracker
+# Pure Python 3 standard library application - zero external pip dependencies required.

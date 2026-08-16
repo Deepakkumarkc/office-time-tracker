@@ -1,93 +1,66 @@
 /* ==========================================================================
-   LIVE TIMER & BREAK REASON MODAL CONTROLLER
+   WORKPULSE - WORK / PRESENCE SESSION & TIMER CONTROLLER (public/js/timer.js)
+   Handles Live Office/Remote Timers, Full Session Editing with Child Task
+   Synchronization, Break Modals, and Accurate Duration Calculations.
    ========================================================================== */
 
-let activeTimerInterval = null;
-let activeSessionStartTime = null;
-let selectedBreakReason = 'Lunch Break';
+let liveTimerInterval = null;
+let currentActiveSessionData = null;
+let selectedBreakReason = 'End of Workday';
 
-function formatSecondsToHMS(totalSeconds) {
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-
-  const pad = (num) => String(num).padStart(2, '0');
-  return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
-}
-
-function startLiveTimerInterval(startTimeISO) {
+/**
+ * Starts the live UI ticker clock for active presence sessions
+ */
+function startLiveTimerInterval(startTimeIso) {
   stopLiveTimerInterval();
-  activeSessionStartTime = new Date(startTimeISO).getTime();
+  if (!startTimeIso) return;
 
-  function updateDisplay() {
-    const now = new Date().getTime();
-    const elapsedSeconds = Math.max(0, Math.floor((now - activeSessionStartTime) / 1000));
-    document.getElementById('timerDisplay').textContent = formatSecondsToHMS(elapsedSeconds);
+  const timerDisplay = document.getElementById('timerDisplay');
+  if (!timerDisplay) return;
+
+  const startMs = new Date(startTimeIso).getTime();
+
+  function updateTick() {
+    const nowMs = Date.now();
+    const elapsedSeconds = Math.max(0, Math.floor((nowMs - startMs) / 1000));
+
+    const hours = Math.floor(elapsedSeconds / 3600);
+    const minutes = Math.floor((elapsedSeconds % 3600) / 60);
+    const seconds = elapsedSeconds % 60;
+
+    const hh = String(hours).padStart(2, '0');
+    const mm = String(minutes).padStart(2, '0');
+    const ss = String(seconds).padStart(2, '0');
+
+    timerDisplay.textContent = `${hh}:${mm}:${ss}`;
   }
 
-  updateDisplay();
-  activeTimerInterval = setInterval(updateDisplay, 1000);
+  updateTick();
+  liveTimerInterval = setInterval(updateTick, 1000);
 }
 
 function stopLiveTimerInterval() {
-  if (activeTimerInterval) {
-    clearInterval(activeTimerInterval);
-    activeTimerInterval = null;
+  if (liveTimerInterval) {
+    clearInterval(liveTimerInterval);
+    liveTimerInterval = null;
   }
-  activeSessionStartTime = null;
-  document.getElementById('timerDisplay').textContent = '00:00:00';
-}
-
-/* Modal Open & Selection Handlers */
-
-function openBreakModal() {
-  const modal = document.getElementById('breakReasonModal');
-  modal.classList.add('open');
-}
-
-function closeBreakModal() {
-  const modal = document.getElementById('breakReasonModal');
-  modal.classList.remove('open');
-}
-
-function selectReasonPill(reason, el) {
-  selectedBreakReason = reason;
-
-  // Toggle active class on pills
-  const pills = document.querySelectorAll('.reason-pill');
-  pills.forEach(p => p.classList.remove('active'));
-  el.classList.add('active');
-
-  // Show/Hide custom reason input
-  const customGroup = document.getElementById('customReasonGroup');
-  if (reason === 'Other') {
-    customGroup.style.display = 'block';
-    document.getElementById('customReasonInput').focus();
-  } else {
-    customGroup.style.display = 'none';
+  const timerDisplay = document.getElementById('timerDisplay');
+  if (timerDisplay) {
+    timerDisplay.textContent = "00:00:00";
   }
 }
 
+/**
+ * Starts an Office or Remote work session
+ */
 async function startTimerSession() {
-  const selectedDate = document.getElementById('selectedDate').value;
-  const workMode = document.getElementById('workModeSelect').value;
+  const selectedDateInput = document.getElementById('selectedDate');
+  const selectedDate = selectedDateInput ? selectedDateInput.value : new Date().toISOString().substring(0, 10);
+  
+  const modeSelect = document.getElementById('workModeSelect');
+  const workMode = modeSelect ? modeSelect.value : (currentWorkMode || 'Office');
 
-  if (!selectedDate) {
-    showToast('Please select a valid date.', 'error');
-    return;
-  }
-
-  const d = new Date();
-  const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  if (selectedDate < today) {
-    showToast('Cannot start timer for a past date.', 'error');
-    return;
-  }
-
-  if (workMode !== 'Office') {
-    showToast('Please select "Office Mode" to start an in-office session timer.', 'error');
-    return;
-  }
+  const nowIso = new Date().toISOString();
 
   try {
     const res = await fetch('/api/sessions/start', {
@@ -99,14 +72,14 @@ async function startTimerSession() {
       body: JSON.stringify({
         date: selectedDate,
         work_mode: workMode,
-        start_time: new Date().toISOString()
+        start_time: nowIso
       })
     });
 
     const data = await res.json();
     if (!res.ok) throw new Error(data.message || 'Failed to start session');
 
-    showToast('Session started! You are logged as IN OFFICE.', 'success');
+    showToast(data.message, 'success');
     fetchDashboardData();
 
   } catch (err) {
@@ -114,20 +87,77 @@ async function startTimerSession() {
   }
 }
 
-async function confirmStopSession() {
-  const selectedDate = document.getElementById('selectedDate').value;
-  let finalReason = selectedBreakReason;
+/* ==========================================================================
+   BREAK / STOP SESSION MODAL CONTROLLER
+   ========================================================================== */
 
-  if (selectedBreakReason === 'Other') {
-    const customText = document.getElementById('customReasonInput').value.trim();
-    if (!customText) {
-      showToast('Please specify a custom reason.', 'error');
-      return;
+function openBreakModal() {
+  const modal = document.getElementById('breakReasonModal');
+  if (!modal) return;
+
+  const activeTaskWarn = document.getElementById('sessionActiveTaskWarning');
+  const activeTaskName = document.getElementById('sessionActiveTaskName');
+  if (activeTaskWarn && activeTaskName) {
+    if (currentActiveTaskData && currentActiveTaskData.title) {
+      activeTaskName.textContent = currentActiveTaskData.title;
+      activeTaskWarn.style.display = 'flex';
+    } else {
+      activeTaskWarn.style.display = 'none';
     }
-    finalReason = customText;
   }
 
-  const notes = document.getElementById('sessionNotesInput').value.trim();
+  const customGroup = document.getElementById('customReasonGroup');
+  const customInput = document.getElementById('customReasonInput');
+  const notesInput = document.getElementById('sessionNotesInput');
+
+  if (customGroup) customGroup.style.display = 'none';
+  if (customInput) customInput.value = '';
+  if (notesInput) notesInput.value = '';
+
+  selectReasonPill('Lunch Break');
+  modal.classList.add('open');
+}
+
+function closeBreakModal() {
+  const modal = document.getElementById('breakReasonModal');
+  if (modal) modal.classList.remove('open');
+}
+
+function selectReasonPill(reasonText, pillElement) {
+  selectedBreakReason = reasonText;
+
+  const pills = document.querySelectorAll('.reason-pill');
+  pills.forEach(p => p.classList.remove('active'));
+
+  if (pillElement) {
+    pillElement.classList.add('active');
+  } else {
+    pills.forEach(p => {
+      if (p.textContent.trim().includes(reasonText)) {
+        p.classList.add('active');
+      }
+    });
+  }
+
+  const customGroup = document.getElementById('customReasonGroup');
+  if (customGroup) {
+    customGroup.style.display = (reasonText === 'Other') ? 'block' : 'none';
+    if (reasonText === 'Other') {
+      const input = document.getElementById('customReasonInput');
+      if (input) input.focus();
+    }
+  }
+}
+
+async function confirmStopSession() {
+  let breakReason = selectedBreakReason;
+  if (breakReason === 'Other') {
+    const customInput = document.getElementById('customReasonInput');
+    breakReason = customInput && customInput.value.trim() ? customInput.value.trim() : 'Other Break';
+  }
+
+  const notesInput = document.getElementById('sessionNotesInput');
+  const notes = notesInput ? notesInput.value.trim() : '';
 
   try {
     const res = await fetch('/api/sessions/stop', {
@@ -137,9 +167,8 @@ async function confirmStopSession() {
         ...getAuthHeader()
       },
       body: JSON.stringify({
-        date: selectedDate,
         stop_time: new Date().toISOString(),
-        break_reason: finalReason,
+        break_reason: breakReason,
         notes: notes
       })
     });
@@ -148,11 +177,13 @@ async function confirmStopSession() {
     if (!res.ok) throw new Error(data.message || 'Failed to stop session');
 
     closeBreakModal();
-    showToast(`Session stopped! Reason: ${finalReason} (${data.duration_formatted || 'recorded'})`, 'success');
-    
-    // Reset modal form
-    document.getElementById('customReasonInput').value = '';
-    document.getElementById('sessionNotesInput').value = '';
+    showToast(data.message, 'success');
+
+    if (data.auto_stopped_task) {
+      setTimeout(() => {
+        showToast(`Task '${data.auto_stopped_task.title}' automatically completed (${data.auto_stopped_task.duration_formatted})`, 'info');
+      }, 800);
+    }
 
     fetchDashboardData();
 
@@ -161,59 +192,70 @@ async function confirmStopSession() {
   }
 }
 
-/* Edit Stop Time Modal Handlers */
+/* ==========================================================================
+   FULL SESSION EDIT MODAL (LIVE OR COMPLETED WITH RECONCILIATION)
+   ========================================================================== */
 
-function openEditStopTimeModal(sessionId, startTimeIso, stopTimeIso, reason, notes) {
-  document.getElementById('editSessionId').value = sessionId;
-
-  const startDt = new Date(startTimeIso);
-  document.getElementById('editSessionStartDisplay').textContent = startDt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' (' + startTimeIso.substring(0, 10) + ')';
-
-  let defaultTimeStr = '';
-  if (stopTimeIso) {
-    const stopDt = new Date(stopTimeIso);
-    const h = String(stopDt.getHours()).padStart(2, '0');
-    const m = String(stopDt.getMinutes()).padStart(2, '0');
-    defaultTimeStr = `${h}:${m}`;
-  } else {
-    const now = new Date();
-    const h = String(now.getHours()).padStart(2, '0');
-    const m = String(now.getMinutes()).padStart(2, '0');
-    defaultTimeStr = `${h}:${m}`;
+function openActiveSessionEditModal() {
+  if (!currentActiveSessionData) {
+    showToast('No active session to edit.', 'error');
+    return;
   }
-  document.getElementById('editStopTimeInput').value = defaultTimeStr;
+  openEditFullSessionModal(
+    currentActiveSessionData.id,
+    currentActiveSessionData.start_time,
+    currentActiveSessionData.stop_time,
+    currentActiveSessionData.break_reason || 'End of Workday',
+    currentActiveSessionData.notes || '',
+    currentActiveSessionData.work_mode || 'Remote',
+    currentActiveSessionData.date
+  );
+}
 
-  const reasonSelect = document.getElementById('editBreakReasonSelect');
-  if (reason) {
-    const matchedOption = Array.from(reasonSelect.options).find(opt => opt.value === reason);
-    if (matchedOption) {
-      reasonSelect.value = reason;
-    } else {
-      reasonSelect.value = 'Other';
-    }
-  } else {
-    reasonSelect.value = 'End of Workday';
-  }
+function openEditFullSessionModal(sessionId, startTime, stopTime, reason, notes, workMode, date) {
+  const modal = document.getElementById('editFullSessionModal');
+  if (!modal) return;
 
-  document.getElementById('editNotesInput').value = notes || '';
+  document.getElementById('editSessionFullId').value = sessionId;
+  
+  const parseTime = (iso) => {
+    if (!iso) return '';
+    if (iso.includes('T')) return iso.split('T')[1].substring(0, 5);
+    return iso.substring(0, 5);
+  };
 
-  const modal = document.getElementById('editStopTimeModal');
+  const selectedDateInput = document.getElementById('selectedDate');
+  document.getElementById('editSessionDateInput').value = date || (selectedDateInput ? selectedDateInput.value : new Date().toISOString().substring(0, 10));
+  document.getElementById('editSessionStartTimeInput').value = parseTime(startTime);
+  document.getElementById('editSessionStopTimeInput').value = parseTime(stopTime);
+  
+  const reasonSelect = document.getElementById('editSessionBreakReasonSelect');
+  if (reasonSelect) reasonSelect.value = reason || 'End of Workday';
+
+  document.getElementById('editSessionNotesInput').value = notes || '';
+
   modal.classList.add('open');
 }
 
-function closeEditStopTimeModal() {
-  const modal = document.getElementById('editStopTimeModal');
-  modal.classList.remove('open');
+function closeEditFullSessionModal() {
+  const modal = document.getElementById('editFullSessionModal');
+  if (modal) modal.classList.remove('open');
 }
 
-async function confirmEditStopTime() {
-  const sessionId = document.getElementById('editSessionId').value;
-  const timeVal = document.getElementById('editStopTimeInput').value;
-  const reasonVal = document.getElementById('editBreakReasonSelect').value;
-  const notesVal = document.getElementById('editNotesInput').value.trim();
+async function confirmEditFullSession() {
+  const sessionId = document.getElementById('editSessionFullId').value;
+  const date = document.getElementById('editSessionDateInput').value;
+  const startTime = document.getElementById('editSessionStartTimeInput').value;
+  const stopTime = document.getElementById('editSessionStopTimeInput').value;
+  const breakReason = document.getElementById('editSessionBreakReasonSelect').value;
+  const notes = document.getElementById('editSessionNotesInput').value.trim();
 
-  if (!sessionId || !timeVal) {
-    showToast('Please select a valid stop time.', 'error');
+  if (!sessionId) {
+    showToast('Session ID is required.', 'error');
+    return;
+  }
+  if (!startTime) {
+    showToast('Start time is required.', 'error');
     return;
   }
 
@@ -226,24 +268,45 @@ async function confirmEditStopTime() {
       },
       body: JSON.stringify({
         session_id: parseInt(sessionId, 10),
-        stop_time: timeVal,
-        break_reason: reasonVal,
-        notes: notesVal
+        date,
+        start_time: startTime,
+        stop_time: stopTime || null,
+        break_reason: breakReason,
+        notes: notes
       })
     });
 
     const data = await res.json();
-    if (!res.ok) throw new Error(data.message || 'Failed to update stop time');
+    if (!res.ok) throw new Error(data.message || 'Failed to edit session');
 
-    closeEditStopTimeModal();
-    showToast(data.message || 'Session stop time updated!', 'success');
+    closeEditFullSessionModal();
+    showToast(data.message, 'success');
 
-    if (typeof fetchDashboardData === 'function') fetchDashboardData();
-    if (typeof fetchAdminOverviewData === 'function' && document.getElementById('adminDashboardScreen').style.display !== 'none') {
-      fetchAdminOverviewData();
+    if (data.reconciled_tasks && data.reconciled_tasks.length > 0) {
+      setTimeout(() => {
+        showToast(`Synchronized ${data.reconciled_tasks.length} related task(s) to match new session time!`, 'info');
+      }, 700);
     }
+
+    fetchDashboardData();
 
   } catch (err) {
     showToast(err.message, 'error');
   }
+}
+
+/* ==========================================================================
+   LEGACY EDIT STOP TIME MODAL CONTROLLER (Preserved for compatibility)
+   ========================================================================== */
+
+function openEditStopTimeModal(sessionId, startTimeStr, stopTimeStr, breakReason, notes) {
+  openEditFullSessionModal(sessionId, startTimeStr, stopTimeStr, breakReason, notes, 'Office', null);
+}
+
+function closeEditStopTimeModal() {
+  closeEditFullSessionModal();
+}
+
+function confirmEditStopTime() {
+  confirmEditFullSession();
 }

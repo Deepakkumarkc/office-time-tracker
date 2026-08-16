@@ -7,44 +7,78 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
-  <title>Office Time Tracker | Attendance & Hours Manager</title>
-  <meta name="description" content="Track office attendance, working hours, and multi-session check-ins with break reasons and target goal analytics.">
+  <title>WorkPulse | Command Center Office & Task Tracker</title>
+  <meta name="description" content="Two-panel Command Center for Office Attendance, Remote Work Sessions, and Detailed Task Tracking.">
   <link rel="stylesheet" href="css/style.css">
   <!-- FontAwesome Icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
 
-  <!-- Top Header Navigation -->
+  <!-- TOP HEADER NAVIGATION -->
   <header class="app-header">
     <div class="header-container">
-      <a href="#" class="brand-logo">
-        <div class="logo-icon">
-          <i class="fa-solid fa-building-user"></i>
-        </div>
-        <div>
-          <div class="brand-title">Office Tracker</div>
-          <div class="brand-tagline">3-Day Target & Hour Analytics</div>
-        </div>
-      </a>
+      <div class="header-left-group">
+        <a href="#" class="brand-logo">
+          <div class="logo-icon">
+            <i class="fa-solid fa-business-time"></i>
+          </div>
+          <div>
+            <div class="brand-title">WorkPulse</div>
+            <div class="brand-tagline">Work & Task Command Center</div>
+          </div>
+        </a>
 
+        <!-- Header Work Mode & Date Controls (Visible when logged in) -->
+        <div id="headerControlsGroup" class="header-controls-group" style="display: none;">
+          <div class="mode-pill-toggle">
+            <button id="modeBtnOffice" class="mode-pill active" onclick="setWorkMode('Office')">
+              <i class="fa-solid fa-building"></i> Office
+            </button>
+            <button id="modeBtnRemote" class="mode-pill" onclick="setWorkMode('Remote')">
+              <i class="fa-solid fa-laptop-house"></i> Remote
+            </button>
+          </div>
+          <div class="header-date-wrapper">
+            <i class="fa-regular fa-calendar-days"></i>
+            <input type="date" id="selectedDate" title="Select Date">
+          </div>
+          <!-- Hidden select for compatibility -->
+          <select id="workModeSelect" style="display: none;" onchange="onWorkModeChange()">
+            <option value="Office">Office</option>
+            <option value="Remote">Remote</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Admin View Switcher (Visible only for Admin role) -->
+      <div id="adminNavGroup" class="admin-nav-switcher" style="display: none;">
+        <button id="navBtnTracker" class="nav-tab-btn active" onclick="switchAppView('tracker')">
+          <i class="fa-solid fa-gauge-high"></i> Command Center
+        </button>
+        <button id="navBtnAdmin" class="nav-tab-btn" onclick="switchAppView('admin')">
+          <i class="fa-solid fa-user-shield"></i> Admin Portal
+        </button>
+      </div>
+
+      <!-- User Profile Badge -->
       <div id="userProfileBadge" class="user-profile-badge" style="display: none;">
         <div id="userAvatar" class="avatar">U</div>
         <div class="user-details">
           <span id="userNameDisplay" class="user-name">Employee</span>
         </div>
         <button id="btnLogout" class="btn-logout" title="Log out">
-          <i class="fa-solid fa-right-from-bracket"></i> Logout
+          <i class="fa-solid fa-right-from-bracket"></i>
         </button>
       </div>
     </div>
   </header>
 
-  <!-- AUTHENTICATION SCREEN (Login / Register) -->
+  <!-- AUTHENTICATION SCREEN (Login / Register / Reset) -->
   <div id="authScreen" class="auth-container">
     <div class="auth-header">
       <h2 id="authTitle">Welcome Back</h2>
-      <p id="authSubtitle">Log in to track your office attendance & working hours</p>
+      <p id="authSubtitle">Log in to your WorkPulse Command Center</p>
     </div>
 
     <div class="auth-tabs">
@@ -61,7 +95,7 @@
 
       <div class="form-group">
         <label for="authEmail">Email Address</label>
-        <input type="email" id="authEmail" class="form-control" placeholder="e.g. john@company.com" required>
+        <input type="email" id="authEmail" class="form-control" placeholder="e.g. john@sagitec.com" required>
       </div>
 
       <div id="passwordGroup" class="form-group">
@@ -84,198 +118,533 @@
   </div>
 
 
-  <!-- MAIN DASHBOARD (Visible when logged in) -->
+  <!-- ======================================================================== -->
+  <!-- MAIN TRACKER SCREEN: TWO-PANEL COMMAND CENTER LAYOUT -->
+  <!-- ======================================================================== -->
   <main id="dashboardScreen" class="main-content" style="display: none;">
-    <div class="dashboard-grid">
+    <div class="command-center-layout">
 
-      <!-- Status Banner Card -->
-      <section class="card status-banner-card">
-        <div class="status-badge-container">
-          <div id="statusDot" class="status-indicator-dot"></div>
-          <div class="status-text-wrapper">
-            <h3 id="currentStatusText">Out of Office</h3>
-            <p id="statusSubtext">Select date and start timer when you arrive at the office.</p>
-          </div>
-        </div>
+      <!-- ==================================================================== -->
+      <!-- LEFT PANEL: USER ACTIONS & LIVE TRACKING CONTROLS (~40% Width) -->
+      <!-- ==================================================================== -->
+      <section class="panel-left-controls">
 
-        <div class="date-selector-group">
-          <i class="fa-regular fa-calendar-days" style="color: var(--accent-primary);"></i>
-          <input type="date" id="selectedDate">
-          <select id="workModeSelect" class="mode-select" onchange="onWorkModeChange()">
-            <option value="Office">🏢 Office Mode</option>
-            <option value="Remote">🏠 Remote / WFH</option>
-          </select>
-        </div>
-      </section>
-
-      <!-- Timer Control Panel -->
-      <section class="card timer-panel">
-        <div class="card-subtitle">ACTIVE SESSION TIMER</div>
-        <div id="timerDisplay" class="timer-display">00:00:00</div>
-        
-        <div class="timer-controls">
-          <button id="btnStartTimer" class="btn-timer btn-start" onclick="startTimerSession()">
-            <i class="fa-solid fa-play"></i> Start Session
-          </button>
-          <button id="btnStopTimer" class="btn-timer btn-stop" onclick="openBreakModal()" disabled>
-            <i class="fa-solid fa-square"></i> Stop Session
-          </button>
-        </div>
-      </section>
-
-      <!-- Stats Overview Panel -->
-      <section class="stats-panel">
-        
-        <!-- Total Hours Today Box -->
-        <div class="stat-box">
-          <div class="stat-icon-wrapper emerald">
-            <i class="fa-solid fa-clock"></i>
-          </div>
-          <div class="stat-info">
-            <h4>Today's Total Office Time</h4>
-            <div id="todayTotalTime" class="stat-number">0h 0m</div>
-          </div>
-        </div>
-
-        <!-- Today's Sessions Count Box -->
-        <div class="stat-box">
-          <div class="stat-icon-wrapper">
-            <i class="fa-solid fa-list-check"></i>
-          </div>
-          <div class="stat-info">
-            <h4>Today's Sessions</h4>
-            <div id="todaySessionsCount" class="stat-number">0</div>
-          </div>
-        </div>
-
-        <!-- Weekly 3-Day Target Card -->
-        <div class="card" style="padding: 1.25rem;">
-          <div class="progress-container">
-            <div class="progress-header">
-              <span>Weekly Goal (3 Days Office)</span>
-              <strong id="weeklyTargetText">0 / 3 Days</strong>
+        <!-- 1. LIVE WORK/PRESENCE SESSION CARD -->
+        <div class="card session-control-card">
+          <div class="session-card-header">
+            <div class="status-badge-wrapper">
+              <div id="statusDot" class="status-indicator-dot"></div>
+              <div>
+                <h3 id="currentStatusText" class="current-status-title">Out of Office</h3>
+                <div id="statusSubtext" class="status-subtext-clean">Click "Start Session" to begin</div>
+              </div>
             </div>
-            <div class="progress-track">
-              <div id="weeklyProgressBar" class="progress-bar" style="width: 0%;"></div>
+            <div style="display: flex; gap: 0.4rem; align-items: center;">
+              <button id="btnEditActiveSession" class="btn-action-icon" style="display: none;" onclick="openActiveSessionEditModal()" title="Edit Live Session Times">
+                <i class="fa-solid fa-pen-to-square"></i> Edit
+              </button>
+              <span id="activeModeBadge" class="mode-indicator-badge">
+                <i class="fa-solid fa-building"></i> Office
+              </span>
             </div>
           </div>
-        </div>
 
-      </section>
-
-      <!-- Today's Sessions Table Card -->
-      <section class="card sessions-table-card">
-        <div class="card-header">
-          <div>
-            <h3 class="card-title"><i class="fa-solid fa-layer-group" style="color: var(--accent-primary);"></i> Today's Office Sessions</h3>
-            <span class="card-subtitle">Multiple enter/leave sessions with start/stop timestamps, durations, and break reasons.</span>
+          <!-- Big Digital Session Timer -->
+          <div class="session-timer-wrapper">
+            <div id="timerPanelSubtitle" class="timer-kicker">LIVE OFFICE TIMER</div>
+            <div id="timerDisplay" class="timer-display-modern">00:00:00</div>
           </div>
-          <button class="btn-logout" style="border: 1px solid var(--glass-border);" onclick="fetchDashboardData()">
-            <i class="fa-solid fa-rotate-right"></i> Refresh
-          </button>
-        </div>
 
-        <div class="table-responsive">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Mode</th>
-                <th>Start Time</th>
-                <th>Stop Time</th>
-                <th>Duration</th>
-                <th>Break / Stop Reason</th>
-                <th>Status</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody id="sessionsTableBody">
-              <!-- Dynamically Populated -->
-            </tbody>
-          </table>
-        </div>
-        
-        <div id="emptySessionsState" class="empty-state" style="display: none;">
-          <div class="empty-icon"><i class="fa-regular fa-folder-open"></i></div>
-          <p>No office sessions recorded for this date yet.</p>
-        </div>
-      </section>
-
-      <!-- Attendance History Log Card -->
-      <section class="card sessions-table-card">
-        <div class="card-header">
-          <div>
-            <h3 class="card-title"><i class="fa-solid fa-history" style="color: var(--accent-secondary);"></i> Attendance History</h3>
-            <span class="card-subtitle">Historical daily totals and session break logs.</span>
-          </div>
-        </div>
-
-        <div class="table-responsive">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Work Mode</th>
-                <th>Total Sessions</th>
-                <th>Total Time Spent</th>
-                <th>Session Break Reasons</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody id="historyTableBody">
-              <!-- Dynamically Populated -->
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- Monthly Summary & Export Reports Card -->
-      <section class="card sessions-table-card">
-        <div class="card-header">
-          <div>
-            <h3 class="card-title"><i class="fa-solid fa-file-invoice" style="color: var(--status-in-office);"></i> Monthly Summary & Free Email Reports</h3>
-            <span class="card-subtitle">Generate, email, or download month-end attendance statements for yourself and coworkers (100% Free).</span>
-          </div>
-          <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
-            <input type="month" id="reportMonth" class="mode-select" style="min-height: 38px;" onchange="fetchMonthlyReportData()">
-            <button class="btn-primary" style="padding: 0.5rem 1rem; width: auto; font-size: 0.85rem;" onclick="exportMonthlyCSV()">
-              <i class="fa-solid fa-file-csv"></i> Download CSV
+          <!-- Primary Session Action Controls -->
+          <div class="session-actions-grid">
+            <button id="btnStartTimer" class="btn-action-primary btn-start-session" onclick="startTimerSession()">
+              <i class="fa-solid fa-play"></i> Start Session
             </button>
-            <button class="btn-primary" style="padding: 0.5rem 1rem; width: auto; font-size: 0.85rem; background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);" onclick="sendMonthlyEmailReport()">
-              <i class="fa-solid fa-paper-plane"></i> Email Monthly Report
+            <button id="btnStopTimer" class="btn-action-danger" onclick="openBreakModal()" disabled>
+              <i class="fa-solid fa-square"></i> Stop Session
+            </button>
+            <button id="btnTakeBreak" class="btn-action-amber" onclick="openBreakModal()" disabled title="Take Break / Coffee">
+              <i class="fa-solid fa-mug-hot"></i> Break
             </button>
           </div>
         </div>
 
-        <div class="stats-panel" style="grid-column: span 12; display: flex; flex-direction: row; flex-wrap: wrap; gap: 1rem; margin-bottom: 1rem;">
-          <div class="stat-box" style="flex: 1; min-width: 200px;">
-            <div class="stat-icon-wrapper emerald"><i class="fa-solid fa-calendar-check"></i></div>
-            <div class="stat-info">
-              <h4>Monthly Office Days</h4>
-              <div id="monthlyOfficeDaysText" class="stat-number">0 Days</div>
+        <!-- 2. CURRENT TASK & WORK TRACKER CARD -->
+        <div class="card task-control-card">
+          <div class="task-card-header-row">
+            <div class="card-section-title" style="margin-bottom: 0;">
+              <i class="fa-solid fa-list-check" style="color: var(--accent-secondary);"></i>
+              <span>Current Task & Activities</span>
+            </div>
+            <button class="btn-add-manual-task" onclick="openManualTaskModal()" title="Manually Add Historical or Running Task">
+              <i class="fa-solid fa-plus"></i> Add Manually
+            </button>
+          </div>
+
+          <!-- Active Running Task Banner (Shown when a task is in progress) -->
+          <div id="activeTaskBanner" class="active-task-hero" style="display: none; margin-top: 0.75rem;">
+            <div class="active-task-hero-content">
+              <div class="pulse-indicator-small">
+                <span class="pulse-ring"></span>
+                <i class="fa-solid fa-spinner fa-spin"></i>
+              </div>
+              <div class="active-task-details">
+                <div class="active-task-kicker">CURRENTLY WORKING ON</div>
+                <h4 id="activeTaskTitle" class="active-task-heading">Task Name</h4>
+                <div class="active-task-meta-row">
+                  <span id="activeTaskCategory" class="category-badge">Development</span>
+                  <span id="activeTaskDesc" class="active-task-note"></span>
+                </div>
+              </div>
+            </div>
+
+            <div class="active-task-hero-actions">
+              <div id="activeTaskTimerDisplay" class="active-task-live-clock">00:00:00</div>
+              <button id="btnStopTask" class="btn-stop-task-hero" onclick="openStopTaskModal()">
+                <i class="fa-solid fa-circle-stop"></i> Stop Task
+              </button>
             </div>
           </div>
-          <div class="stat-box" style="flex: 1; min-width: 200px;">
-            <div class="stat-icon-wrapper"><i class="fa-solid fa-business-time"></i></div>
-            <div class="stat-info">
-              <h4>Total Working Hours</h4>
-              <div id="monthlyHoursText" class="stat-number">0h 0m</div>
+
+          <!-- Fast Task Input Form -->
+          <div class="task-form-wrapper" style="margin-top: 0.75rem;">
+            <div class="form-group mb-sm">
+              <input type="text" id="taskTitleInput" class="form-control task-input-main" placeholder="What are you working on right now? (Press Enter to start)" onkeydown="if(event.key==='Enter') startNewTask()">
             </div>
+            <div class="form-group mb-sm">
+              <input type="text" id="taskDescInput" class="form-control task-input-sub" placeholder="Optional notes, ticket ID, or activity details..." onkeydown="if(event.key==='Enter') startNewTask()">
+            </div>
+
+            <!-- Dynamic Category Pills Container -->
+            <div id="categoryPillsContainer" class="category-pills-scroll">
+              <!-- Dynamically Populated with Categories + Custom Option -->
+            </div>
+
+            <button id="btnStartTask" class="btn-primary btn-start-task-compact" onclick="startNewTask()">
+              <i class="fa-solid fa-play"></i> Start Task
+            </button>
           </div>
-          <div class="stat-box" style="flex: 1; min-width: 200px;">
-            <div class="stat-icon-wrapper amber"><i class="fa-solid fa-list-ol"></i></div>
-            <div class="stat-info">
-              <h4>Total Sessions Logged</h4>
-              <div id="monthlySessionsCountText" class="stat-number">0</div>
+
+          <!-- Quick Resume Recent Tasks -->
+          <div id="quickResumeSection" class="quick-resume-section" style="display: none;">
+            <div class="quick-resume-label">Recent Quick Resume:</div>
+            <div id="quickResumeContainer" class="quick-resume-chips">
+              <!-- Dynamically Populated -->
             </div>
           </div>
         </div>
+
+      </section>
+
+      <!-- ==================================================================== -->
+      <!-- RIGHT PANEL: LIVE DASHBOARD & ACTIVITY COMMAND CENTER (~60% Width) -->
+      <!-- ==================================================================== -->
+      <section class="panel-right-dashboard">
+
+        <!-- 1. TODAY'S METRIC STRIP (4 Compact Metric Tiles in 1 Row) -->
+        <div class="metric-tiles-row">
+          <!-- Total Session Time -->
+          <div class="metric-tile">
+            <div class="metric-tile-icon emerald">
+              <i class="fa-solid fa-building-user"></i>
+            </div>
+            <div class="metric-tile-body">
+              <span class="metric-tile-label">Work Presence</span>
+              <strong id="todayTotalTime" class="metric-tile-value">0h 0m</strong>
+            </div>
+          </div>
+
+          <!-- Tracked Tasks Time -->
+          <div class="metric-tile">
+            <div class="metric-tile-icon indigo">
+              <i class="fa-solid fa-list-check"></i>
+            </div>
+            <div class="metric-tile-body">
+              <span class="metric-tile-label">Tracked Tasks</span>
+              <strong id="todayTotalTaskTime" class="metric-tile-value">0h 0m</strong>
+            </div>
+          </div>
+
+          <!-- Break / Untracked Time -->
+          <div class="metric-tile">
+            <div class="metric-tile-icon amber">
+              <i class="fa-solid fa-mug-hot"></i>
+            </div>
+            <div class="metric-tile-body">
+              <span class="metric-tile-label">Break / Untracked</span>
+              <strong id="todayBreakTime" class="metric-tile-value">0h 0m</strong>
+            </div>
+          </div>
+
+          <!-- Total Logged Count -->
+          <div class="metric-tile">
+            <div class="metric-tile-icon purple">
+              <i class="fa-solid fa-layer-group"></i>
+            </div>
+            <div class="metric-tile-body">
+              <span class="metric-tile-label">Sessions & Tasks</span>
+              <strong class="metric-tile-value"><span id="todaySessionsCount">0</span>s / <span id="todayTasksCount">0</span>t</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. WEEKLY OFFICE REQUIREMENTS PROGRESS & 7-DAY ATTENDANCE STRIP -->
+        <div class="card weekly-progress-compact-card">
+          <div class="weekly-progress-header">
+            <div>
+              <span class="weekly-header-title">
+                <i class="fa-solid fa-bullseye" style="color: var(--accent-primary);"></i> Actual Weekly Office Attendance
+              </span>
+              <span id="weeklyPlannedScheduleSub" class="weekly-header-sub">Planned: Mon-Fri</span>
+            </div>
+            <button class="btn-configure-small" onclick="openTargetSettingsModal()">
+              <i class="fa-solid fa-sliders"></i> Configure Targets
+            </button>
+          </div>
+
+          <!-- 7-Day Interactive Attendance Strip (Monday -> Sunday) -->
+          <div class="weekly-strip-container">
+            <div class="weekly-strip-label">
+              <span><i class="fa-regular fa-calendar-days"></i> This Week (Mon – Sun):</span>
+              <span class="weekly-strip-hint">Click any day to view activity</span>
+            </div>
+            <div id="weeklyAttendanceStrip" class="weekly-attendance-strip">
+              <!-- Dynamically Populated with Mon..Sun Day Chips -->
+            </div>
+          </div>
+
+          <!-- Dual Meters Grid -->
+          <div class="dual-meters-grid">
+            <!-- Days Meter -->
+            <div class="meter-col">
+              <div class="meter-info-row">
+                <span><i class="fa-regular fa-calendar-check" style="color: var(--status-in-office);"></i> Actual Office Days</span>
+                <strong id="weeklyTargetDaysText">0 / 3 Days</strong>
+              </div>
+              <div class="progress-track-sm">
+                <div id="weeklyProgressBar" class="progress-bar" style="width: 0%;"></div>
+              </div>
+              <div id="weeklyDaysRemainingText" class="meter-rem-text">3 days remaining</div>
+            </div>
+
+            <!-- Hours Meter -->
+            <div class="meter-col">
+              <div class="meter-info-row">
+                <span><i class="fa-regular fa-clock" style="color: var(--accent-secondary);"></i> Actual Office Hours</span>
+                <strong id="weeklyTargetHoursText">0h / 24h</strong>
+              </div>
+              <div class="progress-track-sm">
+                <div id="weeklyHoursProgressBar" class="progress-bar progress-bar-hours" style="width: 0%;"></div>
+              </div>
+              <div id="weeklyHoursRemainingText" class="meter-rem-text">24h remaining</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. LIVE ACTIVITY TIMELINE (Command Center Highlight - Independently Scrollable) -->
+        <div class="card activity-timeline-card">
+          <div class="timeline-card-header">
+            <div class="card-section-title">
+              <i class="fa-solid fa-timeline" style="color: #38bdf8;"></i>
+              <span>Today's Activity Timeline</span>
+            </div>
+            <div class="timeline-quick-legend">
+              <span class="legend-dot checkin"></span> Entry
+              <span class="legend-dot task"></span> Task
+              <span class="legend-dot break"></span> Break
+            </div>
+          </div>
+
+          <div id="activityTimelineContainer" class="timeline-scroll-container">
+            <!-- Dynamically Populated -->
+          </div>
+
+          <div id="emptyTimelineState" class="empty-state-compact" style="display: none;">
+            <i class="fa-regular fa-calendar-xmark"></i>
+            <span>No activity recorded for this date yet. Start a session or task on the left!</span>
+          </div>
+
+          <!-- Category Distribution Pills Footer -->
+          <div id="categoryBadgesContainer" class="category-distribution-footer">
+            <!-- Dynamically Populated -->
+          </div>
+        </div>
+
+        <!-- 4. SECONDARY DATA DRAWER (Tabbed Detailed Tables: Tasks, Sessions, History, Monthly) -->
+        <div class="card secondary-tabs-card">
+          <div class="secondary-tabs-header">
+            <div class="secondary-nav-tabs">
+              <button class="secondary-tab-btn active" onclick="switchSecondaryTab('tasks', this)">
+                <i class="fa-solid fa-list-ul"></i> Today's Tasks
+              </button>
+              <button class="secondary-tab-btn" onclick="switchSecondaryTab('sessions', this)">
+                <i class="fa-solid fa-building-circle-check"></i> Presence Sessions
+              </button>
+              <button class="secondary-tab-btn" onclick="switchSecondaryTab('history', this)">
+                <i class="fa-solid fa-calendar-week"></i> Date-Range Explorer
+              </button>
+              <button class="secondary-tab-btn" onclick="switchSecondaryTab('monthly', this)">
+                <i class="fa-solid fa-file-invoice"></i> Reports & Export
+              </button>
+            </div>
+          </div>
+
+          <!-- Tab 1: Detailed Tasks Table -->
+          <div id="tabContentTasks" class="secondary-tab-content active">
+            <div class="table-responsive-compact">
+              <table class="table table-compact">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Task Title & Notes</th>
+                    <th>Category</th>
+                    <th>Start</th>
+                    <th>Stop</th>
+                    <th>Duration</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="tasksTableBody">
+                  <!-- Dynamically Populated -->
+                </tbody>
+              </table>
+            </div>
+            <div id="emptyTasksState" class="empty-state-compact" style="display: none;">
+              <span>No tasks logged yet for this date.</span>
+            </div>
+          </div>
+
+          <!-- Tab 2: Office / Work Sessions Table -->
+          <div id="tabContentSessions" class="secondary-tab-content" style="display: none;">
+            <div class="table-responsive-compact">
+              <table class="table table-compact">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Mode</th>
+                    <th>Start</th>
+                    <th>Stop</th>
+                    <th>Duration</th>
+                    <th>Break Reason & Notes</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="sessionsTableBody">
+                  <!-- Dynamically Populated -->
+                </tbody>
+              </table>
+            </div>
+            <div id="emptySessionsState" class="empty-state-compact" style="display: none;">
+              <span>No presence sessions logged yet for this date.</span>
+            </div>
+          </div>
+
+          <!-- Tab 3: DATE-RANGE EXPLORER & HIERARCHICAL TREE (DATE -> SESSIONS -> TASKS) -->
+          <div id="tabContentHistory" class="secondary-tab-content" style="display: none;">
+            
+            <!-- Quick Preset Pills -->
+            <div class="range-presets-wrapper">
+              <span class="range-presets-label"><i class="fa-solid fa-bolt"></i> Quick Range:</span>
+              <div class="range-presets-pills">
+                <button class="range-preset-pill" onclick="selectRangePreset('today', this)">Today</button>
+                <button class="range-preset-pill" onclick="selectRangePreset('yesterday', this)">Yesterday</button>
+                <button class="range-preset-pill" onclick="selectRangePreset('this_week', this)">This Week</button>
+                <button class="range-preset-pill" onclick="selectRangePreset('last_week', this)">Last Week</button>
+                <button class="range-preset-pill active" onclick="selectRangePreset('last_30_days', this)">Last 30 Days</button>
+                <button class="range-preset-pill" onclick="selectRangePreset('this_month', this)">This Month</button>
+                <button class="range-preset-pill" onclick="selectRangePreset('last_month', this)">Last Month</button>
+                <button class="range-preset-pill" onclick="selectRangePreset('custom', this)">Custom</button>
+              </div>
+            </div>
+
+            <!-- Date Range Controls & Filter Toolbar -->
+            <div class="range-filter-toolbar">
+              <div class="range-inputs-group">
+                <div class="range-field">
+                  <label for="historyStartDate">From:</label>
+                  <input type="date" id="historyStartDate" class="form-control-sm" onchange="onCustomDateChange()">
+                </div>
+                <div class="range-field">
+                  <label for="historyEndDate">To:</label>
+                  <input type="date" id="historyEndDate" class="form-control-sm" onchange="onCustomDateChange()">
+                </div>
+                <button class="btn-sm btn-primary-sm" onclick="fetchRangeReportData()">
+                  <i class="fa-solid fa-magnifying-glass"></i> Apply
+                </button>
+              </div>
+
+              <div class="range-filters-group">
+                <select id="historyModeFilter" class="form-control-sm" onchange="fetchRangeReportData()">
+                  <option value="All">All Modes (Office & Remote)</option>
+                  <option value="Office">Office Only</option>
+                  <option value="Remote">Remote Only</option>
+                </select>
+
+                <select id="historyCategoryFilter" class="form-control-sm" onchange="fetchRangeReportData()">
+                  <option value="All">All Categories</option>
+                  <!-- Populated dynamically -->
+                </select>
+
+                <div class="search-input-wrapper">
+                  <i class="fa-solid fa-search search-icon"></i>
+                  <input type="text" id="historySearchInput" class="form-control-sm" placeholder="Search tasks / notes..." onkeyup="debounceRangeSearch()">
+                </div>
+              </div>
+            </div>
+
+            <!-- Dynamic Date-Range KPI Summary Strip -->
+            <div class="range-summary-tiles">
+              <div class="range-kpi-card">
+                <div class="range-kpi-icon emerald"><i class="fa-solid fa-building-circle-check"></i></div>
+                <div>
+                  <div class="range-kpi-label">Office Days Logged</div>
+                  <strong id="rangeOfficeDaysText" class="range-kpi-val">0 Days</strong>
+                  <div id="rangeOfficeHoursSub" class="range-kpi-sub">0h 0m total</div>
+                </div>
+              </div>
+
+              <div class="range-kpi-card">
+                <div class="range-kpi-icon blue"><i class="fa-solid fa-laptop-house"></i></div>
+                <div>
+                  <div class="range-kpi-label">Remote Work Time</div>
+                  <strong id="rangeRemoteHoursText" class="range-kpi-val">0h 0m</strong>
+                  <div id="rangeRemoteDaysSub" class="range-kpi-sub">0 days</div>
+                </div>
+              </div>
+
+              <div class="range-kpi-card">
+                <div class="range-kpi-icon purple"><i class="fa-solid fa-business-time"></i></div>
+                <div>
+                  <div class="range-kpi-label">Total Work Presence</div>
+                  <strong id="rangeTotalWorkText" class="range-kpi-val">0h 0m</strong>
+                  <div id="rangeSessionsCountSub" class="range-kpi-sub">0 sessions</div>
+                </div>
+              </div>
+
+              <div class="range-kpi-card">
+                <div class="range-kpi-icon indigo"><i class="fa-solid fa-list-check"></i></div>
+                <div>
+                  <div class="range-kpi-label">Tracked Tasks</div>
+                  <strong id="rangeTaskHoursText" class="range-kpi-val">0h 0m</strong>
+                  <div id="rangeTasksCountSub" class="range-kpi-sub">0 tasks completed</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Tree View Controls Row -->
+            <div class="tree-controls-row">
+              <div class="tree-controls-label">
+                <i class="fa-solid fa-sitemap" style="color: var(--accent-primary);"></i>
+                <strong>Work Sessions & Nested Tasks</strong>
+              </div>
+              <div style="display: flex; gap: 0.5rem;">
+                <button class="btn-tree-toggle" onclick="expandAllRangeDays()">
+                  <i class="fa-solid fa-chevron-down"></i> Expand All
+                </button>
+                <button class="btn-tree-toggle" onclick="collapseAllRangeDays()">
+                  <i class="fa-solid fa-chevron-right"></i> Collapse All
+                </button>
+              </div>
+            </div>
+
+            <!-- Hierarchical Tree Container (Date -> Sessions -> Tasks) -->
+            <div id="historyRangeTreeContainer" class="history-tree-container">
+              <!-- Dynamically Populated with Date Nodes, Sessions, and Child Tasks Tables -->
+            </div>
+
+            <div id="emptyHistoryRangeState" class="empty-state-compact" style="display: none;">
+              <i class="fa-regular fa-calendar-xmark" style="font-size: 2rem; color: var(--text-muted); margin-bottom: 0.5rem;"></i>
+              <span>No sessions or tasks found for the selected date range and filters.</span>
+            </div>
+
+          </div>
+
+          <!-- Tab 4: REPORTS & MULTI-SHEET EXPORT -->
+          <div id="tabContentMonthly" class="secondary-tab-content" style="display: none;">
+            <div class="export-tab-container">
+              <div class="export-header-banner">
+                <div>
+                  <h4 style="margin: 0 0 4px 0; color: #fff; font-size: 1.05rem;">
+                    <i class="fa-solid fa-file-excel" style="color: #10b981;"></i> Multi-Section Attendance & Tasks Export
+                  </h4>
+                  <p style="margin: 0; font-size: 0.8rem; color: var(--text-muted);">
+                    Generate a structured Excel/CSV statement containing Executive Summary, Work Sessions, Child Tasks, Daily Rollups, and Category breakdown.
+                  </p>
+                </div>
+              </div>
+
+              <div class="export-config-grid">
+                <!-- Range Selector for Export -->
+                <div class="export-config-card">
+                  <div class="card-section-title"><i class="fa-regular fa-calendar-days"></i> Export Period</div>
+                  <div style="display: flex; gap: 0.6rem; margin-bottom: 0.85rem;">
+                    <div style="flex: 1;">
+                      <label style="font-size: 0.76rem; color: var(--text-muted);">From Date:</label>
+                      <input type="date" id="exportStartDate" class="form-control-sm">
+                    </div>
+                    <div style="flex: 1;">
+                      <label style="font-size: 0.76rem; color: var(--text-muted);">To Date:</label>
+                      <input type="date" id="exportEndDate" class="form-control-sm">
+                    </div>
+                  </div>
+                  <div style="display: flex; gap: 0.5rem;">
+                    <button class="btn-sm btn-primary-sm" style="flex: 1; min-height: 38px;" onclick="triggerRangeExport()">
+                      <i class="fa-solid fa-file-arrow-down"></i> Download Multi-Sheet CSV / Excel
+                    </button>
+                    <button class="btn-sm btn-blue-sm" style="min-height: 38px;" onclick="sendRangeEmailReport()">
+                      <i class="fa-solid fa-paper-plane"></i> Email
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Monthly Quick Selector -->
+                <div class="export-config-card">
+                  <div class="card-section-title"><i class="fa-solid fa-calendar-check"></i> Monthly Statement Quick-Picker</div>
+                  <div style="display: flex; gap: 0.6rem; align-items: center; margin-bottom: 0.85rem;">
+                    <input type="month" id="reportMonth" class="form-control-sm" style="flex: 1;" onchange="syncMonthToExportRange(this.value)">
+                    <button class="btn-sm btn-secondary" onclick="syncCurrentMonthExport()">This Month</button>
+                  </div>
+                  <div style="display: flex; gap: 0.5rem;">
+                    <button class="btn-sm btn-primary-sm" style="flex: 1; min-height: 38px;" onclick="downloadMonthlyStatement()">
+                      <i class="fa-solid fa-file-arrow-down"></i> Download Monthly Report
+                    </button>
+                    <button class="btn-sm btn-blue-sm" style="min-height: 38px;" onclick="sendRangeEmailReport()">
+                      <i class="fa-solid fa-paper-plane"></i> Email
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Executive Snapshot Table for Export Period -->
+              <div class="export-snapshot-wrapper">
+                <div class="monthly-summary-row" style="margin-bottom: 0;">
+                  <div class="monthly-stat-pill">
+                    <span>Office Days:</span> <strong id="monthlyOfficeDaysText">0 Days</strong>
+                  </div>
+                  <div class="monthly-stat-pill">
+                    <span>Office Time:</span> <strong id="monthlyOfficeHoursText">0h 0m</strong>
+                  </div>
+                  <div class="monthly-stat-pill">
+                    <span>Remote Time:</span> <strong id="monthlyRemoteHoursText">0h 0m</strong>
+                  </div>
+                  <div class="monthly-stat-pill">
+                    <span>Tracked Tasks:</span> <strong id="monthlyTaskHoursText">0h 0m</strong>
+                  </div>
+            </div>
+          </div>
+        </div>
+
       </section>
 
     </div>
   </main>
 
+
+  <!-- ======================================================================== -->
   <!-- ADMIN PORTAL DASHBOARD (Visible when logged in as ADMIN) -->
+  <!-- ======================================================================== -->
   <main id="adminDashboardScreen" class="main-content" style="display: none;">
     <div class="dashboard-grid">
 
@@ -286,11 +655,11 @@
             <i class="fa-solid fa-user-shield"></i>
           </div>
           <div class="status-text-wrapper">
-            <h3 style="color: #fbbf24;">Administrator Portal</h3>
-            <p>Master team management view: Employee accounts, live office timings, and session break logs.</p>
+            <h3 style="color: #fbbf24;">Administrator Team Portal</h3>
+            <p>Master team management view: Employee accounts, configured requirements, live timings, and session break logs.</p>
           </div>
         </div>
-        <div>
+        <div style="display: flex; gap: 0.75rem;">
           <button class="btn-logout" style="border: 1px solid var(--glass-border); padding: 0.5rem 1rem; background: rgba(0,0,0,0.3);" onclick="fetchAdminOverviewData()">
             <i class="fa-solid fa-rotate-right"></i> Refresh Admin Data
           </button>
@@ -327,7 +696,7 @@
         <div class="card-header">
           <div>
             <h3 class="card-title"><i class="fa-solid fa-address-book" style="color: var(--accent-primary);"></i> Employee Directory & Accounts</h3>
-            <span class="card-subtitle">List of all registered employee profiles, credentials info, and cumulative hours.</span>
+            <span class="card-subtitle">List of all registered employee profiles, credentials info, configured targets, and cumulative hours.</span>
           </div>
         </div>
 
@@ -340,14 +709,12 @@
                 <th>Email Address</th>
                 <th>Role</th>
                 <th>Current Password</th>
-                <th>Registered Date</th>
+                <th>Weekly Target</th>
                 <th>Total Sessions</th>
                 <th>Total Time Spent</th>
                 <th>Action / Reset</th>
               </tr>
             </thead>
-
-
             <tbody id="adminUsersTableBody">
               <!-- Dynamically Populated -->
             </tbody>
@@ -394,20 +761,344 @@
   </main>
 
 
+  <!-- ======================================================================== -->
+  <!-- MODAL DIALOGS -->
+  <!-- ======================================================================== -->
 
-  <!-- BREAK REASON MODAL DIALOG -->
+  <!-- 1. MANUAL TASK ENTRY MODAL DIALOG (NEW!) -->
+  <div id="manualTaskModal" class="modal-backdrop">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title">
+          <i class="fa-solid fa-clock-rotate-left" style="color: var(--accent-primary);"></i> Add Task / Activity Manually
+        </div>
+        <button class="btn-close-modal" onclick="closeManualTaskModal()">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <p style="font-size: 0.86rem; color: var(--text-muted); margin-bottom: 1.1rem;">
+          Forgot to track a task? Enter its details below. If the task is still running, leave the <strong>Stop Time</strong> empty.
+        </p>
+
+        <div class="form-group">
+          <label for="manualTaskTitleInput"><i class="fa-solid fa-heading"></i> Task / Activity Title *</label>
+          <input type="text" id="manualTaskTitleInput" class="form-control" placeholder="e.g. Client Presentation, Monthly Report, Code Review..." required>
+        </div>
+
+        <div class="form-group">
+          <label for="manualTaskCategorySelect"><i class="fa-solid fa-tags"></i> Category (Optional)</label>
+          <div style="display: flex; gap: 0.5rem;">
+            <select id="manualTaskCategorySelect" class="form-control" style="flex: 1;" onchange="onManualCategoryChange(this.value)">
+              <!-- Dynamically Populated -->
+            </select>
+            <input type="text" id="manualTaskCustomCategoryInput" class="form-control" style="display: none; flex: 1;" placeholder="Enter custom category...">
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 0.75rem;">
+          <div class="form-group" style="flex: 1;">
+            <label for="manualTaskDateInput"><i class="fa-regular fa-calendar"></i> Date *</label>
+            <input type="date" id="manualTaskDateInput" class="form-control" required>
+          </div>
+          <div class="form-group" style="flex: 1;">
+            <label for="manualTaskStartTimeInput"><i class="fa-regular fa-clock"></i> Start Time *</label>
+            <input type="time" id="manualTaskStartTimeInput" class="form-control" required>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="manualTaskStopTimeInput">
+            <i class="fa-solid fa-flag-checkered"></i> Stop Time (Optional)
+          </label>
+          <input type="time" id="manualTaskStopTimeInput" class="form-control" placeholder="Leave empty if task is currently running">
+          <div style="font-size: 0.74rem; color: var(--accent-primary); margin-top: 0.35rem;">
+            💡 <strong>Tip:</strong> If you leave Stop Time blank, this task will immediately start ticking live from the entered Start Time.
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="manualTaskDescInput"><i class="fa-regular fa-comment-dots"></i> Optional Description / Notes</label>
+          <textarea id="manualTaskDescInput" class="form-control" rows="2" placeholder="e.g. Prepared deck slides, discussed with team..."></textarea>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeManualTaskModal()">Cancel</button>
+        <button class="btn-primary" style="flex: 1;" onclick="submitManualTask()">
+          <i class="fa-solid fa-floppy-disk"></i> Save Task
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. FULL SESSION EDIT MODAL DIALOG (LIVE OR COMPLETED SESSIONS) -->
+  <div id="editFullSessionModal" class="modal-backdrop">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title">
+          <i class="fa-solid fa-pen-to-square" style="color: #38bdf8;"></i> Edit Work Session Times
+        </div>
+        <button class="btn-close-modal" onclick="closeEditFullSessionModal()">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <input type="hidden" id="editSessionFullId">
+
+        <div class="modal-warning-box" style="margin-bottom: 1rem; background: rgba(56, 189, 248, 0.1); border-color: rgba(56, 189, 248, 0.3);">
+          <i class="fa-solid fa-arrows-rotate" style="color: #38bdf8; font-size: 1.1rem;"></i>
+          <div style="font-size: 0.8rem; color: var(--text-main);">
+            <strong>Intelligent Synchronization:</strong> Updating session times will automatically adjust any child tasks to stay within the session bounds.
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 0.75rem;">
+          <div class="form-group" style="flex: 1;">
+            <label for="editSessionDateInput"><i class="fa-regular fa-calendar"></i> Session Date</label>
+            <input type="date" id="editSessionDateInput" class="form-control" required>
+          </div>
+          <div class="form-group" style="flex: 1;">
+            <label for="editSessionStartTimeInput"><i class="fa-regular fa-clock"></i> Start Time</label>
+            <input type="time" id="editSessionStartTimeInput" class="form-control" required>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="editSessionStopTimeInput"><i class="fa-solid fa-flag-checkered"></i> Stop Time (Ends live session if running)</label>
+          <input type="time" id="editSessionStopTimeInput" class="form-control">
+          <div style="font-size: 0.74rem; color: var(--text-muted); margin-top: 0.3rem;">
+            Provide an end time to complete the session, or leave blank to keep it active.
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="editSessionBreakReasonSelect"><i class="fa-solid fa-tag"></i> Break / Stop Reason</label>
+          <select id="editSessionBreakReasonSelect" class="form-control">
+            <option value="End of Workday">End of Workday</option>
+            <option value="Lunch Break">Lunch Break</option>
+            <option value="Tea/Coffee Break">Tea/Coffee Break</option>
+            <option value="Client Meeting">Client Meeting</option>
+            <option value="Personal Work">Personal Work</option>
+            <option value="Going Outside Office">Going Outside Office</option>
+            <option value="Work From Home">Work From Home</option>
+            <option value="End of Remote Day">End of Remote Day</option>
+            <option value="Auto Cutoff (Forgot to stop timer)">Auto Cutoff (Forgot to stop timer)</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="editSessionNotesInput">Optional Notes / Comments</label>
+          <textarea id="editSessionNotesInput" class="form-control" rows="2" placeholder="e.g. Forgot to stop timer at 5:30 PM"></textarea>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeEditFullSessionModal()">Cancel</button>
+        <button class="btn-primary" style="flex: 1;" onclick="confirmEditFullSession()">
+          <i class="fa-solid fa-floppy-disk"></i> Save & Synchronize
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. WEEKLY TARGET CONFIGURATION MODAL DIALOG -->
+  <div id="targetSettingsModal" class="modal-backdrop">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title">
+          <i class="fa-solid fa-sliders" style="color: var(--accent-primary);"></i> Configure Weekly Office Targets
+        </div>
+        <button class="btn-close-modal" onclick="closeTargetSettingsModal()">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <p style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 1.25rem;">
+          Customize your required office attendance targets. Your weekly compliance progress bars will automatically adapt to your targets:
+        </p>
+
+        <div class="form-group">
+          <label for="targetDaysInput"><i class="fa-solid fa-calendar-days" style="color: var(--status-in-office);"></i> Required Office Days / Week</label>
+          <input type="number" id="targetDaysInput" class="form-control" min="1" max="7" value="3" required>
+          <span style="font-size: 0.75rem; color: var(--text-muted);">e.g. 3 days, 4 days, or 5 days per week.</span>
+        </div>
+
+        <div class="form-group">
+          <label for="targetHoursInput"><i class="fa-solid fa-clock" style="color: var(--accent-secondary);"></i> Required Total Office Hours / Week</label>
+          <input type="number" id="targetHoursInput" class="form-control" min="1" max="168" step="0.5" value="24" required>
+          <span style="font-size: 0.75rem; color: var(--text-muted);">e.g. 20 hours, 24 hours, 25 hours, or 40 hours per week.</span>
+        </div>
+
+        <div class="form-group">
+          <label for="preferredDaysInput"><i class="fa-regular fa-calendar-check" style="color: #38bdf8;"></i> Preferred Planning Schedule (e.g. Mon,Tue,Wed,Thu,Fri)</label>
+          <input type="text" id="preferredDaysInput" class="form-control" placeholder="e.g. Mon,Tue,Wed,Thu,Fri">
+          <div style="font-size: 0.74rem; color: var(--text-muted); margin-top: 0.35rem; line-height: 1.4;">
+            💡 <strong>Note:</strong> Preferred days are for planning and visual reference. Any actual day you attend the office (including Sundays and weekends) will count as an actual office day.
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeTargetSettingsModal()">Cancel</button>
+        <button class="btn-primary" style="flex: 1;" onclick="saveTargetSettings()">
+          <i class="fa-solid fa-floppy-disk"></i> Save Requirements
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. SWITCH ACTIVE TASK MODAL DIALOG -->
+  <div id="switchTaskModal" class="modal-backdrop">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title">
+          <i class="fa-solid fa-repeat" style="color: var(--accent-primary);"></i> Switch Active Task
+        </div>
+        <button class="btn-close-modal" onclick="closeSwitchTaskModal()">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1rem;">
+          You currently have a task in progress. Starting a new task will automatically complete your current task:
+        </p>
+
+        <div class="modal-warning-box" style="margin-bottom: 1rem;">
+          <i class="fa-solid fa-circle-pause" style="color: #f59e0b; font-size: 1.2rem;"></i>
+          <div>
+            <div style="font-size: 0.78rem; color: var(--text-muted);">Currently Running Task:</div>
+            <strong id="switchCurrentTaskTitle" style="color: #fbbf24; font-size: 0.95rem;">--</strong>
+          </div>
+        </div>
+
+        <div style="background: rgba(255,255,255,0.03); padding: 0.85rem 1rem; border-radius: 8px; border: 1px solid var(--glass-border);">
+          <div style="font-size: 0.78rem; color: var(--text-muted);">New Task to Start:</div>
+          <strong id="switchNewTaskTitle" style="color: var(--accent-primary); font-size: 1rem;">--</strong>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeSwitchTaskModal()">Cancel</button>
+        <button class="btn-primary" style="flex: 1;" onclick="confirmSwitchTask()">
+          <i class="fa-solid fa-check"></i> Complete Current & Start New Task
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. STOP TASK CONFIRMATION MODAL DIALOG -->
+  <div id="stopTaskModal" class="modal-backdrop">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title">
+          <i class="fa-solid fa-circle-check" style="color: var(--status-in-office);"></i> Complete & Stop Task
+        </div>
+        <button class="btn-close-modal" onclick="closeStopTaskModal()">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <input type="hidden" id="stopTaskIdInput">
+        
+        <div class="form-group" style="background: rgba(255,255,255,0.03); padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid var(--glass-border); margin-bottom: 1rem;">
+          <div style="font-size: 0.8rem; color: var(--text-muted);">Task Name:</div>
+          <strong id="stopTaskTitleDisplay" style="color: var(--accent-primary); font-size: 1.05rem;">--</strong>
+        </div>
+
+        <div class="form-group">
+          <label for="stopTaskNotesInput">Optional Task Completion Notes</label>
+          <textarea id="stopTaskNotesInput" class="form-control" rows="2" placeholder="e.g. Completed slide deck, sent review to client..."></textarea>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeStopTaskModal()">Cancel</button>
+        <button class="btn-primary" style="flex: 1; background: linear-gradient(135deg, #10b981 0%, #059669 100%);" onclick="confirmStopTask()">
+          <i class="fa-solid fa-check"></i> Complete & Save Task
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 6. EDIT TASK MODAL DIALOG -->
+  <div id="editTaskModal" class="modal-backdrop">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title">
+          <i class="fa-solid fa-pen-to-square" style="color: #fbbf24;"></i> Edit Task Details
+        </div>
+        <button class="btn-close-modal" onclick="closeEditTaskModal()">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <input type="hidden" id="editTaskId">
+
+        <div class="form-group">
+          <label for="editTaskTitleInput">Task Title / Name</label>
+          <input type="text" id="editTaskTitleInput" class="form-control" required>
+        </div>
+
+        <div class="form-group">
+          <label for="editTaskCategorySelect">Category</label>
+          <select id="editTaskCategorySelect" class="form-control">
+            <option value="Development">Development</option>
+            <option value="Meeting">Meeting</option>
+            <option value="Communication">Communication</option>
+            <option value="Administration">Administration</option>
+            <option value="Research">Research</option>
+            <option value="Documentation">Documentation</option>
+            <option value="Support">Support</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+
+        <div style="display: flex; gap: 1rem;">
+          <div class="form-group" style="flex: 1;">
+            <label for="editTaskStartTimeInput"><i class="fa-regular fa-clock"></i> Start Time</label>
+            <input type="time" id="editTaskStartTimeInput" class="form-control" required>
+          </div>
+          <div class="form-group" style="flex: 1;">
+            <label for="editTaskStopTimeInput"><i class="fa-regular fa-clock"></i> Stop Time</label>
+            <input type="time" id="editTaskStopTimeInput" class="form-control">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="editTaskDescriptionInput">Description / Notes</label>
+          <textarea id="editTaskDescriptionInput" class="form-control" rows="2" placeholder="Task description or notes..."></textarea>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeEditTaskModal()">Cancel</button>
+        <button class="btn-primary" style="flex: 1;" onclick="confirmEditTask()">
+          <i class="fa-solid fa-floppy-disk"></i> Save Changes
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 7. BREAK REASON MODAL DIALOG (OFFICE / REMOTE SESSION) -->
   <div id="breakReasonModal" class="modal-backdrop">
     <div class="modal-dialog">
       <div class="modal-header">
         <div class="modal-title">
-          <i class="fa-solid fa-circle-pause" style="color: var(--warning);"></i> Stop Session / Take a Break
+          <i class="fa-solid fa-circle-pause" style="color: var(--warning);"></i> Stop Work Session / Take a Break
         </div>
         <button class="btn-close-modal" onclick="closeBreakModal()">&times;</button>
       </div>
 
       <div class="modal-body">
+        <!-- Active Task Auto-Stop Warning Notice -->
+        <div id="sessionActiveTaskWarning" class="modal-warning-box" style="display: none; margin-bottom: 1.25rem;">
+          <i class="fa-solid fa-triangle-exclamation" style="color: #fbbf24; font-size: 1.25rem; margin-top: 2px;"></i>
+          <div>
+            <div style="font-weight: 700; color: #fbbf24;">Active Task in Progress</div>
+            <div style="font-size: 0.82rem; color: var(--text-main);">
+              Task: "<strong id="sessionActiveTaskName">--</strong>". Stopping your session will automatically complete and timestamp this task.
+            </div>
+          </div>
+        </div>
+
         <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1.25rem;">
-          Select or enter the reason for stopping your current office timer session:
+          Select or enter the reason for stopping your current session:
         </p>
 
         <!-- Preset Reason Pills Grid -->
@@ -460,7 +1151,7 @@
     </div>
   </div>
 
-  <!-- EDIT STOP TIME MODAL DIALOG -->
+  <!-- 8. EDIT STOP TIME MODAL DIALOG (PRESENCE SESSION) -->
   <div id="editStopTimeModal" class="modal-backdrop">
     <div class="modal-dialog">
       <div class="modal-header">
@@ -521,11 +1212,12 @@
   <div id="toastContainer" class="toast-container"></div>
 
   <footer class="app-footer">
-    Office Time Tracker &copy; 2026 | Built for IT Coworker Attendance & Hours Compliance
+    WorkPulse Command Center &copy; 2026 | Built for IT Coworkers & Universal Productivity
   </footer>
 
   <script src="js/auth.js"></script>
   <script src="js/timer.js"></script>
+  <script src="js/tasks.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
