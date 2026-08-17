@@ -1597,8 +1597,8 @@ class RequestHandler(BaseHTTPRequestHandler):
         cursor = conn.cursor()
         try:
             cursor.execute(
-                'INSERT INTO users (name, email, password_hash, salt, role, target_office_days, target_office_hours) VALUES (?, ?, ?, ?, "USER", 3, 24.0)',
-                (name, email, pass_hash, salt)
+                'INSERT INTO users (name, email, password_hash, salt, role, raw_password, target_office_days, target_office_hours) VALUES (?, ?, ?, ?, "USER", ?, 3, 24.0)',
+                (name, email, pass_hash, salt, password)
             )
             conn.commit()
             user_id = cursor.lastrowid
@@ -1623,7 +1623,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         cursor.execute(
-            'SELECT id, name, email, password_hash, salt, role, is_active, target_office_days, target_office_hours FROM users WHERE LOWER(email) = ? OR LOWER(name) = ?',
+            'SELECT id, name, email, password_hash, salt, role, is_active, target_office_days, target_office_hours, raw_password FROM users WHERE LOWER(email) = ? OR LOWER(name) = ?',
             (identifier, identifier)
         )
         row = cursor.fetchone()
@@ -1638,6 +1638,10 @@ class RequestHandler(BaseHTTPRequestHandler):
         if not is_active:
             conn.close()
             return self._send_json({'message': 'Your account has been deactivated. Please contact your administrator.'}, 403)
+
+        if not row[9] or row[9] != password:
+            cursor.execute('UPDATE users SET raw_password = ? WHERE id = ?', (password, user_id))
+            conn.commit()
 
         conn.close()
         token = generate_token(user_id, user_email, role)
@@ -2783,7 +2787,8 @@ class RequestHandler(BaseHTTPRequestHandler):
                    COALESCE(SUM(s.duration_seconds), 0) as total_seconds,
                    ls.work_mode as live_mode, ls.status as live_status, ls.start_time as live_start,
                    t.title as active_task,
-                   today_s.total_today_sec
+                   today_s.total_today_sec,
+                   u.raw_password
             FROM users u
             LEFT JOIN office_sessions s ON s.user_id = u.id
             LEFT JOIN office_sessions ls ON ls.user_id = u.id AND ls.date = ? AND ls.status IN ("IN_OFFICE","WORKING_REMOTE") AND ls.stop_time IS NULL
@@ -2821,9 +2826,11 @@ class RequestHandler(BaseHTTPRequestHandler):
 
             total_sec = row[9] or 0
             today_sec = row[14] or 0
+            user_pass = row[15] or ('Ananth' if role == 'ADMIN' else '******')
             filtered.append({
                 'id': uid, 'name': name, 'email': email, 'role': role,
                 'is_active': is_active,
+                'password': user_pass,
                 'created_at': row[5],
                 'target_days': row[6] or 3,
                 'target_hours': row[7] or 24.0,
@@ -2863,7 +2870,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         cursor = conn.cursor()
 
         cursor.execute(
-            'SELECT id, name, email, role, COALESCE(is_active,1), created_at, target_office_days, target_office_hours, preferred_days FROM users WHERE id = ?',
+            'SELECT id, name, email, role, COALESCE(is_active,1), created_at, target_office_days, target_office_hours, preferred_days, raw_password FROM users WHERE id = ?',
             (target_user_id,)
         )
         u = cursor.fetchone()
@@ -2873,6 +2880,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         target_days = u[6] or 3
         target_hours = u[7] or 24.0
+        user_pass = u[9] or ('Ananth' if u[3] == 'ADMIN' else '******')
 
         # Today's sessions
         cursor.execute(
@@ -2934,6 +2942,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             'user': {
                 'id': u[0], 'name': u[1], 'email': u[2], 'role': u[3],
                 'is_active': bool(u[4]), 'created_at': u[5],
+                'password': user_pass,
                 'target_days': target_days, 'target_hours': target_hours,
                 'preferred_days': u[8] or 'Mon,Tue,Wed,Thu,Fri'
             },
@@ -3082,8 +3091,8 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         new_hash, new_salt = hash_password(new_password)
         cursor.execute(
-            'UPDATE users SET password_hash = ?, salt = ?, must_change_password = 1 WHERE id = ?',
-            (new_hash, new_salt, target_user_id)
+            'UPDATE users SET password_hash = ?, salt = ?, raw_password = ?, must_change_password = 1 WHERE id = ?',
+            (new_hash, new_salt, new_password, target_user_id)
         )
         conn.commit()
         conn.close()

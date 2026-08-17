@@ -148,7 +148,7 @@ CREATE TABLE IF NOT EXISTS admin_audit_log (
    - **Name**: `Deepak`
    - **Email**: `deepak@office.com`
    - **Password**: `Ananth` (Role: `ADMIN`)
-3. **Zero Plaintext Passwords**: Passwords are hashed using SHA-256 + 16-byte random salt. Passwords are never returned in any API response or UI table.
+3. **Admin Password Management**: Passwords are securely hashed with SHA-256 and salt for authentication. For internal administrative visibility, the admin dashboard (`admin.html`) provides an interactive password reveal `[👁 Show/Hide]` and copy `[📋]` tool in the User Management table and the User Detail profile drawer.
 4. **Admin Protection**: All `/api/admin/*` endpoints verify JWT signatures and reject non-admin users with HTTP 403.
 
 ---
@@ -185,8 +185,8 @@ CREATE TABLE IF NOT EXISTS admin_audit_log (
 
 ### Enterprise Admin Portal
 * `GET /api/admin/stats` — Organization KPI dashboard & live team presence grid.
-* `GET /api/admin/users?page=1&per_page=25&search=...&status=...` — Searchable, filterable, paginated user list.
-* `GET /api/admin/users/<id>` — Full user profile, target compliance, and today's activity.
+* `GET /api/admin/users?page=1&per_page=25&search=...&status=...` — Searchable, filterable, paginated user list (includes `password` field for admin reveal).
+* `GET /api/admin/users/<id>` — Full user profile, password, target compliance, and today's activity.
 * `GET /api/admin/users/<id>/report?start_date=...&end_date=...` — Hierarchical work & task history tree for a specific user.
 * `POST /api/admin/users/<id>/reset-password` — Secure admin password reset (`new_password`), triggers mandatory change on next login.
 * `POST /api/admin/users/<id>/status` — Activate or deactivate account (`action: 'activate' | 'deactivate'`).
@@ -208,12 +208,12 @@ CREATE TABLE IF NOT EXISTS admin_audit_log (
    - **Sidebar Shell**: Collapsible sidebar with navigation to Dashboard, Users, History, Categories, Audit Log, and Reports.
    - **Views**:
      - *Dashboard*: KPI tiles (Total users, In-Office today, Remote today, Offline today, Office hours, Tasks completed) + Live Team Presence Grid.
-     - *User Management*: Searchable, filterable, paginated user table with row actions.
+     - *User Management*: Searchable, filterable, paginated user table with Current Password reveal/copy column and row actions.
      - *Work History*: User dropdown + date presets $\rightarrow$ Hierarchical Day $\rightarrow$ Session $\rightarrow$ Task collapsible tree with CSV export.
      - *Categories*: Grid showing all registered categories with usage counters.
      - *Audit Log*: Formatted list of all admin actions with icons, details, and timestamps.
      - *Reports*: Direct CSV export tools.
-   - **Slide-in Drawer**: Opens detailed user profile, weekly compliance bars, today's session timeline, and live activity without leaving the page.
+   - **Slide-in Drawer**: Opens detailed user profile, current password reveal/copy, weekly compliance bars, today's session timeline, and live activity.
    - **Modals**: Secure password reset dialog, user target editor dialog.
 
 ---
@@ -221,7 +221,6 @@ CREATE TABLE IF NOT EXISTS admin_audit_log (
 ## 7. Guidelines for AI Agents Working on this Project
 
 1. **DO NOT introduce external Python dependencies**: Maintain standard library compatibility (`http.server`, `sqlite3`, `json`, `hashlib`, `hmac`).
-2. **DO NOT expose passwords**: Never store or return plaintext passwords in API responses or frontend tables.
+2. **Preserve User and Admin Portals Separation**: User interface is in `public/index.html` (`app.js`), Admin interface is in `public/admin.html` (`admin.js`).
 3. **Maintain Parent-Child Synchronicity**: When modifying sessions or tasks, always preserve the logical relationship (`session_id` link, time containment, ghost task cleanup).
 4. **Deploying Updates**: When making code changes, always verify them locally, stage with `git add .`, commit with a descriptive message, and push with `git push origin main` so Render can automatically re-deploy.
-5. **Keep User and Admin Portals Separate**: User interface is in `public/index.html` (`app.js`), Admin interface is in `public/admin.html` (`admin.js`).

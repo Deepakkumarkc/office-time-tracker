@@ -400,6 +400,8 @@ function renderUsersTable(data) {
     const todayHours = `${u.today_hours || 0}h ${u.today_minutes || 0}m`;
     const totalHours = `${u.total_hours || 0}h ${u.total_minutes || 0}m`;
     const targetLabel = `${u.target_days || 3}d / ${u.target_hours || 24}h`;
+    const plainPass = u.password || '******';
+    const passSpanId = `user_pass_span_${u.id}`;
 
     const toggleStatusBtn = u.role === 'ADMIN' ? '' : (
       u.is_active ? 
@@ -424,6 +426,13 @@ function renderUsersTable(data) {
         <td><strong>${todayHours}</strong></td>
         <td style="color: var(--text-muted);">${totalHours} (${u.session_count || 0} sessions)</td>
         <td><span class="badge" style="background: rgba(99,102,241,0.1); color: var(--accent-primary); padding: 3px 8px; border-radius: 4px; font-size: 0.75rem;">${targetLabel}</span></td>
+        <td>
+          <div style="display: flex; align-items: center; gap: 0.35rem;">
+            <span id="${passSpanId}" style="font-family: monospace; letter-spacing: 2px; font-weight: 700; background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px; font-size: 0.8rem; color: #fbbf24;">••••••••</span>
+            <button class="btn-icon-action" onclick="toggleUserPasswordVisibility('${passSpanId}', '${escapeHtml(plainPass)}', this)" title="Show/Hide Password"><i class="fa-solid fa-eye"></i></button>
+            <button class="btn-icon-action" onclick="copyPasswordToClipboard('${escapeHtml(plainPass)}')" title="Copy Password"><i class="fa-solid fa-copy"></i></button>
+          </div>
+        </td>
         <td>
           <div class="row-actions">
             <button class="btn-icon-action" onclick="openUserDrawer(${u.id})" title="View Complete Profile"><i class="fa-solid fa-eye"></i></button>
@@ -1319,3 +1328,64 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
 }
+
+// ==========================================================================
+// 12. PASSWORD VISIBILITY & CLIPBOARD HELPERS
+// ==========================================================================
+
+function toggleUserPasswordVisibility(spanId, rawPassword, btnEl) {
+  const span = document.getElementById(spanId);
+  if (!span) return;
+
+  if (span.textContent === '••••••••') {
+    span.textContent = rawPassword || '******';
+    span.style.color = '#10b981';
+    if (btnEl) btnEl.innerHTML = '<i class="fa-solid fa-eye-slash"></i>';
+  } else {
+    span.textContent = '••••••••';
+    span.style.color = '#fbbf24';
+    if (btnEl) btnEl.innerHTML = '<i class="fa-solid fa-eye"></i>';
+  }
+}
+
+function copyPasswordToClipboard(rawPassword) {
+  if (!rawPassword) {
+    showAdminToast('No password available to copy.', 'warning');
+    return;
+  }
+  navigator.clipboard.writeText(rawPassword).then(() => {
+    showAdminToast('Password copied to clipboard!', 'success');
+  }).catch(() => {
+    // Fallback for older browsers or non-HTTPS
+    const input = document.createElement('textarea');
+    input.value = rawPassword;
+    document.body.appendChild(input);
+    input.select();
+    document.execCommand('copy');
+    document.body.removeChild(input);
+    showAdminToast('Password copied to clipboard!', 'success');
+  });
+}
+
+function toggleDrawerPasswordVisibility(btnEl) {
+  if (!cachedDrawerUserData || !cachedDrawerUserData.user) return;
+  const span = document.getElementById('drawerPasswordSpan');
+  if (!span) return;
+
+  const rawPass = cachedDrawerUserData.user.password || '******';
+  if (span.textContent === '••••••••') {
+    span.textContent = rawPass;
+    span.style.color = '#10b981';
+    if (btnEl) btnEl.innerHTML = '<i class="fa-solid fa-eye-slash"></i>';
+  } else {
+    span.textContent = '••••••••';
+    span.style.color = '#fbbf24';
+    if (btnEl) btnEl.innerHTML = '<i class="fa-solid fa-eye"></i>';
+  }
+}
+
+function copyDrawerPassword() {
+  if (!cachedDrawerUserData || !cachedDrawerUserData.user) return;
+  copyPasswordToClipboard(cachedDrawerUserData.user.password);
+}
+

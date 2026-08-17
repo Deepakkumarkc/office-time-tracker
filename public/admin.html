@@ -308,6 +308,7 @@
                   <th>Today Logged</th>
                   <th>Total Time</th>
                   <th>Target (Days/Hrs)</th>
+                  <th>Current Password</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -584,10 +585,22 @@
             <div id="drawerStatus" class="info-value">Active</div>
           </div>
           <div class="info-item">
+            <div class="info-label">Current Password</div>
+            <div class="info-value" style="display: flex; align-items: center; gap: 0.4rem;">
+              <span id="drawerPasswordSpan" style="font-family: monospace; letter-spacing: 2px; font-weight: 700; color: #fbbf24; background: rgba(0,0,0,0.3); padding: 2px 8px; border-radius: 4px;">••••••••</span>
+              <button class="btn btn-ghost btn-sm" style="padding: 2px 7px; font-size: 0.72rem;" onclick="toggleDrawerPasswordVisibility(this)" title="Show/Hide Password">
+                <i class="fa-solid fa-eye"></i>
+              </button>
+              <button class="btn btn-ghost btn-sm" style="padding: 2px 7px; font-size: 0.72rem;" onclick="copyDrawerPassword()" title="Copy Password">
+                <i class="fa-solid fa-copy"></i>
+              </button>
+            </div>
+          </div>
+          <div class="info-item">
             <div class="info-label">Joined Date</div>
             <div id="drawerJoined" class="info-value">—</div>
           </div>
-          <div class="info-item">
+          <div class="info-item" style="grid-column: 1 / -1;">
             <div class="info-label">Preferred Days</div>
             <div id="drawerPreferredDays" class="info-value">Mon, Tue, Wed, Thu, Fri</div>
           </div>
