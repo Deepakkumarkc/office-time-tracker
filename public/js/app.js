@@ -6,7 +6,6 @@
    ========================================================================== */
 
 let cachedMonthlyData = null;
-let cachedAdminMasterSessions = [];
 let currentUserSettings = null;
 let currentWorkMode = 'Office';
 
@@ -131,8 +130,7 @@ function updateDashboardUI(data) {
     category_breakdown,
     timeline,
     user_targets,
-    weekly_compliance, 
-    history 
+    weekly_compliance
   } = data;
 
   currentUserSettings = user_targets;
@@ -322,7 +320,6 @@ function updateDashboardUI(data) {
 
   // 7. Render Secondary Tab Tables
   renderSessionsTable(today_sessions || []);
-  renderHistoryTable(history || []);
   renderQuickResumeChips(today_tasks || []);
 }
 
@@ -517,215 +514,11 @@ async function saveTargetSettings() {
    ========================================================================== */
 
 function switchAppView(view) {
-  const dashboardScreen = document.getElementById('dashboardScreen');
-  const adminDashboardScreen = document.getElementById('adminDashboardScreen');
-  const navBtnTracker = document.getElementById('navBtnTracker');
-  const navBtnAdmin = document.getElementById('navBtnAdmin');
-
   if (view === 'admin') {
-    dashboardScreen.style.display = 'none';
-    adminDashboardScreen.style.display = 'block';
-    if (navBtnTracker) navBtnTracker.classList.remove('active');
-    if (navBtnAdmin) navBtnAdmin.classList.add('active');
-    fetchAdminOverviewData();
+    window.location.href = '/admin.html';
   } else {
-    adminDashboardScreen.style.display = 'none';
-    dashboardScreen.style.display = 'block';
-    if (navBtnTracker) navBtnTracker.classList.add('active');
-    if (navBtnAdmin) navBtnAdmin.classList.remove('active');
     fetchDashboardData();
   }
-}
-
-/* ==========================================================================
-   ADMIN PORTAL CONTROLLER
-   ========================================================================== */
-
-async function fetchAdminOverviewData() {
-  try {
-    const res = await fetch('/api/admin/overview', {
-      headers: getAuthHeader()
-    });
-
-    if (res.status === 401 || res.status === 403) {
-      showToast('Admin authorization failed', 'error');
-      logoutUser();
-      return;
-    }
-
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.message || 'Failed to fetch admin overview');
-
-    updateAdminUI(data);
-
-  } catch (err) {
-    showToast(err.message, 'error');
-  }
-}
-
-function updateAdminUI(data) {
-  const { stats, users, master_sessions } = data;
-
-  document.getElementById('adminTotalUsersCount').textContent = stats.total_users || 0;
-  document.getElementById('adminActiveInOfficeCount').textContent = stats.active_in_office_today || 0;
-  document.getElementById('adminTeamTotalHours').textContent = `${stats.team_total_hours || 0}h`;
-
-  cachedAdminMasterSessions = master_sessions || [];
-
-  renderAdminUsersTable(users || []);
-  renderAdminMasterSessionsTable(cachedAdminMasterSessions);
-}
-
-function renderAdminUsersTable(users) {
-  const tbody = document.getElementById('adminUsersTableBody');
-  if (!tbody) return;
-  tbody.innerHTML = '';
-
-  if (users.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: var(--text-muted);">No registered users found.</td></tr>';
-    return;
-  }
-
-  users.forEach(u => {
-    const tr = document.createElement('tr');
-    const roleBadge = u.role === 'ADMIN' ? 
-      '<span class="badge" style="background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4);"><i class="fa-solid fa-user-shield"></i> ADMIN</span>' :
-      '<span class="badge badge-secondary"><i class="fa-solid fa-user"></i> USER</span>';
-
-    const plainPass = u.password || '******';
-    const passSpanId = `pass_span_${u.id}`;
-    const targetDesc = `${u.target_office_days || 3}d / ${u.target_office_hours || 24}h`;
-
-    tr.innerHTML = `
-      <td><strong>#${u.id}</strong></td>
-      <td><strong>${u.name}</strong></td>
-      <td>${u.email}</td>
-      <td>${roleBadge}</td>
-      <td>
-        <div style="display: flex; align-items: center; gap: 0.5rem;">
-          <span id="${passSpanId}" style="font-family: monospace; font-weight: bold; background: rgba(0,0,0,0.3); padding: 0.2rem 0.5rem; border-radius: 4px;">••••••••</span>
-          <button class="btn-logout" style="padding: 0.2rem 0.5rem; font-size: 0.75rem; border: 1px solid var(--glass-border);" onclick="togglePasswordVisibility('${passSpanId}', '${plainPass.replace(/'/g, "\\'")}', this)">
-            <i class="fa-solid fa-eye"></i> Show
-          </button>
-        </div>
-      </td>
-      <td><span class="badge badge-secondary">${targetDesc}</span></td>
-      <td>${u.session_count} session(s)</td>
-      <td><strong>${u.total_hours}h ${u.total_minutes}m</strong></td>
-      <td>
-        <button class="btn-primary" style="padding: 0.35rem 0.75rem; font-size: 0.78rem; width: auto; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);" onclick="promptAdminResetPassword(${u.id}, '${u.name.replace(/'/g, "\\'")}', '${u.email}')">
-          <i class="fa-solid fa-key"></i> Set Password
-        </button>
-      </td>
-    `;
-    tbody.appendChild(tr);
-  });
-}
-
-function togglePasswordVisibility(spanId, passText, btnElement) {
-  const span = document.getElementById(spanId);
-  if (span.textContent === '••••••••') {
-    span.textContent = passText;
-    span.style.color = '#fbbf24';
-    btnElement.innerHTML = '<i class="fa-solid fa-eye-slash"></i> Hide';
-  } else {
-    span.textContent = '••••••••';
-    span.style.color = 'inherit';
-    btnElement.innerHTML = '<i class="fa-solid fa-eye"></i> Show';
-  }
-}
-
-async function promptAdminResetPassword(userId, userName, userEmail) {
-  const newPassword = prompt(`🔑 Admin Password Reset:\n\nEnter new password for employee '${userName}' (${userEmail}):`);
-  if (!newPassword || !newPassword.trim()) return;
-
-  try {
-    const res = await fetch('/api/admin/reset-user-password', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...getAuthHeader()
-      },
-      body: JSON.stringify({ user_id: userId, new_password: newPassword.trim() })
-    });
-
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.message || 'Failed to reset user password');
-
-    showToast(data.message, 'success');
-  } catch (err) {
-    showToast(err.message, 'error');
-  }
-}
-
-function renderAdminMasterSessionsTable(sessions) {
-  const tbody = document.getElementById('adminMasterSessionsTableBody');
-  if (!tbody) return;
-  tbody.innerHTML = '';
-
-  if (sessions.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: var(--text-muted);">No session records found.</td></tr>';
-    return;
-  }
-
-  sessions.forEach((s, idx) => {
-    const tr = document.createElement('tr');
-    
-    const startTimeFormatted = formatTimeStr(s.start_time);
-    const stopTimeFormatted = s.stop_time ? formatTimeStr(s.stop_time) : '<em>In Progress...</em>';
-    const durationFormatted = s.stop_time ? formatDurationStr(s.duration_seconds) : '---';
-    
-    let statusBadge = '';
-    if (s.status === 'IN_OFFICE') {
-      statusBadge = '<span class="badge badge-active"><i class="fa-solid fa-satellite-dish"></i> IN OFFICE</span>';
-    } else if (s.status === 'WORKING_REMOTE') {
-      statusBadge = '<span class="badge" style="background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4);"><i class="fa-solid fa-laptop-house"></i> REMOTE</span>';
-    } else if (s.status === 'AUTO_CUTOFF') {
-      statusBadge = '<span class="badge badge-autocutoff"><i class="fa-solid fa-triangle-exclamation"></i> AUTO CUTOFF</span>';
-    } else {
-      statusBadge = '<span class="badge badge-success"><i class="fa-solid fa-check"></i> COMPLETED</span>';
-    }
-
-    const reasonHTML = getReasonBadgeHTML(s.break_reason, s.notes);
-    const editBtnHTML = `
-      <button class="btn-logout btn-edit-session" style="padding: 0.25rem 0.6rem; font-size: 0.78rem; border: 1px solid var(--glass-border); background: rgba(59, 130, 246, 0.15); color: #60a5fa;" 
-        onclick="openEditStopTimeModal(${s.id}, '${s.start_time}', '${s.stop_time || ''}', '${(s.break_reason || '').replace(/'/g, "\\'")}', '${(s.notes || '').replace(/'/g, "\\'")}')" title="Manually edit stop time">
-        <i class="fa-solid fa-pen"></i> Edit
-      </button>
-    `;
-
-    tr.innerHTML = `
-      <td><strong>${idx + 1}</strong></td>
-      <td>
-        <strong style="color: var(--text-main);">${s.employee_name}</strong>
-        <div style="font-size: 0.75rem; color: var(--text-muted);">${s.employee_email}</div>
-      </td>
-      <td>${s.date} <span class="badge badge-secondary" style="font-size: 0.7rem;">${s.work_mode}</span></td>
-      <td>${startTimeFormatted}</td>
-      <td>${stopTimeFormatted}</td>
-      <td><strong>${durationFormatted}</strong></td>
-      <td>${reasonHTML}</td>
-      <td>${statusBadge}</td>
-      <td>${editBtnHTML}</td>
-    `;
-    tbody.appendChild(tr);
-  });
-}
-
-function filterAdminSessionsTable() {
-  const query = document.getElementById('adminFilterInput').value.trim().toLowerCase();
-  if (!query) {
-    renderAdminMasterSessionsTable(cachedAdminMasterSessions);
-    return;
-  }
-
-  const filtered = cachedAdminMasterSessions.filter(s => 
-    (s.employee_name && s.employee_name.toLowerCase().includes(query)) ||
-    (s.employee_email && s.employee_email.toLowerCase().includes(query)) ||
-    (s.break_reason && s.break_reason.toLowerCase().includes(query))
-  );
-
-  renderAdminMasterSessionsTable(filtered);
 }
 
 /* ==========================================================================
@@ -1359,7 +1152,9 @@ async function sendRangeEmailReport() {
   const sDate = document.getElementById('exportStartDate').value;
   const eDate = document.getElementById('exportEndDate').value;
 
-  const email = prompt("Enter recipient email address for the attendance statement:", "deepakkumar.kc@sagitec.com");
+  const user = getCurrentUser();
+  const defaultEmail = (user && user.email) ? user.email : '';
+  const email = prompt("Enter recipient email address for the attendance statement:", defaultEmail);
   if (!email || !email.trim()) return;
 
   try {

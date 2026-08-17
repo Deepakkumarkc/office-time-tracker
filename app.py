@@ -125,6 +125,21 @@ def init_db():
         )
     ''')
 
+    # 4. Admin Audit Log Table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS admin_audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            admin_id INTEGER NOT NULL,
+            admin_name TEXT NOT NULL,
+            action TEXT NOT NULL,
+            target_user_id INTEGER,
+            target_user_name TEXT,
+            details TEXT,
+            ip_address TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
     # Column Migrations
     cursor.execute("PRAGMA table_info(users)")
     u_cols = [row[1] for row in cursor.fetchall()]
@@ -151,6 +166,11 @@ def init_db():
     if 'work_mode' not in t_cols:
         cursor.execute("ALTER TABLE tasks ADD COLUMN work_mode TEXT DEFAULT 'Office'")
 
+    if 'is_active' not in u_cols:
+        cursor.execute("ALTER TABLE users ADD COLUMN is_active INTEGER DEFAULT 1")
+    if 'must_change_password' not in u_cols:
+        cursor.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0")
+
     # Auto-Seed Admin: Deepak / Ananth
     admin_name = "Deepak"
     admin_email = "deepak@office.com"
@@ -167,8 +187,8 @@ def init_db():
             )
     else:
         cursor.execute(
-            "INSERT INTO users (name, email, password_hash, salt, role, raw_password, target_office_days, target_office_hours) VALUES (?, ?, ?, ?, 'ADMIN', ?, 3, 24.0)",
-            (admin_name, admin_email, admin_hash, admin_salt, admin_pass)
+            "INSERT INTO users (name, email, password_hash, salt, role, target_office_days, target_office_hours) VALUES (?, ?, ?, ?, 'ADMIN', 3, 24.0)",
+            (admin_name, admin_email, admin_hash, admin_salt)
         )
 
     conn.commit()
@@ -334,6 +354,20 @@ def decode_token(token):
     except Exception:
         return None
 
+def log_admin_action(admin_id, admin_name, action, target_user_id=None, target_user_name=None, details=None):
+    """Records admin actions to the audit log for accountability."""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute(
+            'INSERT INTO admin_audit_log (admin_id, admin_name, action, target_user_id, target_user_name, details) VALUES (?, ?, ?, ?, ?, ?)',
+            (admin_id, admin_name, action, target_user_id, target_user_name, details)
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[Audit Log Error] {e}")
+
 # Helper to format ISO to nice time string (HH:MM AM/PM)
 def format_time_label(iso_str):
     if not iso_str:
@@ -438,6 +472,48 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.handle_admin_overview()
             return
 
+        if path == '/api/admin/stats':
+            self.handle_admin_stats()
+            return
+
+        if path == '/api/admin/users':
+            query_params = urllib.parse.parse_qs(parsed_url.query)
+            self.handle_admin_users(query_params)
+            return
+
+        if path == '/api/admin/audit-log':
+            query_params = urllib.parse.parse_qs(parsed_url.query)
+            self.handle_admin_audit_log(query_params)
+            return
+
+        if path == '/api/admin/categories':
+            self.handle_admin_categories()
+            return
+
+        # Parameterized admin user routes: /api/admin/users/<id>/...
+        if path.startswith('/api/admin/users/'):
+            parts = path.split('/')
+            # parts = ['', 'api', 'admin', 'users', '<id>', optional_action]
+            if len(parts) >= 5:
+                try:
+                    target_uid = int(parts[4])
+                except ValueError:
+                    self._send_json({'message': 'Invalid user ID'}, 400)
+                    return
+
+                action = parts[5] if len(parts) > 5 else ''
+                query_params = urllib.parse.parse_qs(parsed_url.query)
+
+                if action == 'report':
+                    self.handle_admin_user_report(target_uid, query_params)
+                    return
+                elif action == 'export':
+                    self.handle_admin_user_export(target_uid, query_params)
+                    return
+                elif action == '':
+                    self.handle_admin_user_profile(target_uid)
+                    return
+
         # Static File Serving
         filepath = path.lstrip('/')
         if not filepath:
@@ -507,6 +583,25 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.handle_send_monthly_email(payload)
         elif path == '/api/admin/reset-user-password':
             self.handle_admin_reset_user_password(payload)
+        elif path.startswith('/api/admin/users/'):
+            parts = path.split('/')
+            if len(parts) >= 6:
+                try:
+                    target_uid = int(parts[4])
+                except ValueError:
+                    self._send_json({'message': 'Invalid user ID'}, 400)
+                    return
+                action = parts[5] if len(parts) > 5 else ''
+                if action == 'reset-password':
+                    self.handle_admin_user_reset_password(target_uid, payload)
+                elif action == 'status':
+                    self.handle_admin_user_status(target_uid, payload)
+                elif action == 'update':
+                    self.handle_admin_user_update(target_uid, payload)
+                else:
+                    self._send_json({'message': 'Endpoint not found'}, 404)
+            else:
+                self._send_json({'message': 'Endpoint not found'}, 404)
         else:
             self._send_json({'message': 'Endpoint not found'}, 404)
 
@@ -1493,8 +1588,8 @@ class RequestHandler(BaseHTTPRequestHandler):
         if not name or not email or not password:
             return self._send_json({'message': 'All fields are required.'}, 400)
 
-        if not email.endswith('@sagitec.com'):
-            return self._send_json({'message': 'Registration is restricted to official @sagitec.com email addresses.'}, 400)
+        if '@' not in email or '.' not in email.split('@')[-1]:
+            return self._send_json({'message': 'Please provide a valid email address.'}, 400)
 
         pass_hash, salt = hash_password(password)
 
@@ -1502,8 +1597,8 @@ class RequestHandler(BaseHTTPRequestHandler):
         cursor = conn.cursor()
         try:
             cursor.execute(
-                'INSERT INTO users (name, email, password_hash, salt, role, raw_password, target_office_days, target_office_hours) VALUES (?, ?, ?, ?, "USER", ?, 3, 24.0)',
-                (name, email, pass_hash, salt, password)
+                'INSERT INTO users (name, email, password_hash, salt, role, target_office_days, target_office_hours) VALUES (?, ?, ?, ?, "USER", 3, 24.0)',
+                (name, email, pass_hash, salt)
             )
             conn.commit()
             user_id = cursor.lastrowid
@@ -1528,7 +1623,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         cursor.execute(
-            'SELECT id, name, email, password_hash, salt, role, raw_password, target_office_days, target_office_hours FROM users WHERE LOWER(email) = ? OR LOWER(name) = ?',
+            'SELECT id, name, email, password_hash, salt, role, is_active, target_office_days, target_office_hours FROM users WHERE LOWER(email) = ? OR LOWER(name) = ?',
             (identifier, identifier)
         )
         row = cursor.fetchone()
@@ -1538,10 +1633,11 @@ class RequestHandler(BaseHTTPRequestHandler):
             return self._send_json({'message': 'Invalid credentials.'}, 401)
 
         user_id, name, user_email, role = row[0], row[1], row[2], (row[5] or 'USER')
-        
-        if not row[6]:
-            cursor.execute('UPDATE users SET raw_password = ? WHERE id = ?', (password, user_id))
-            conn.commit()
+        is_active = row[6] if row[6] is not None else 1
+
+        if not is_active:
+            conn.close()
+            return self._send_json({'message': 'Your account has been deactivated. Please contact your administrator.'}, 403)
 
         conn.close()
         token = generate_token(user_id, user_email, role)
@@ -2522,6 +2618,688 @@ class RequestHandler(BaseHTTPRequestHandler):
             'users': users_list,
             'master_sessions': master_sessions
         })
+
+# ==============================================================================
+# NEW ADMIN PORTAL HANDLERS
+# ==============================================================================
+
+    def _require_admin(self):
+        """Returns user payload if ADMIN, otherwise sends 401/403 and returns None."""
+        user = self._get_auth_user()
+        if not user:
+            self._send_json({'message': 'Unauthorized'}, 401)
+            return None
+        if user.get('role') != 'ADMIN':
+            self._send_json({'message': 'Access Denied: Admin privileges required.'}, 403)
+            return None
+        return user
+
+    def handle_admin_stats(self):
+        """Rich KPI dashboard stats for the admin portal."""
+        admin = self._require_admin()
+        if not admin: return
+
+        today_str = datetime.date.today().isoformat()
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+
+        # Total users & active count
+        cursor.execute('SELECT COUNT(*), SUM(CASE WHEN is_active = 1 OR is_active IS NULL THEN 1 ELSE 0 END) FROM users')
+        total_users, active_users = cursor.fetchone()
+
+        # Currently working (live sessions today)
+        cursor.execute(
+            'SELECT COUNT(*), SUM(CASE WHEN work_mode="Office" THEN 1 ELSE 0 END), SUM(CASE WHEN work_mode="Remote" THEN 1 ELSE 0 END) '
+            'FROM office_sessions WHERE date = ? AND status IN ("IN_OFFICE", "WORKING_REMOTE") AND stop_time IS NULL',
+            (today_str,)
+        )
+        r = cursor.fetchone()
+        currently_working = r[0] or 0
+        currently_office = r[1] or 0
+        currently_remote = r[2] or 0
+
+        # Today's completed office hours
+        cursor.execute(
+            'SELECT COALESCE(SUM(duration_seconds), 0) FROM office_sessions WHERE date = ? AND work_mode="Office"',
+            (today_str,)
+        )
+        office_sec_today = cursor.fetchone()[0] or 0
+
+        # Today's completed remote hours
+        cursor.execute(
+            'SELECT COALESCE(SUM(duration_seconds), 0) FROM office_sessions WHERE date = ? AND work_mode="Remote"',
+            (today_str,)
+        )
+        remote_sec_today = cursor.fetchone()[0] or 0
+
+        # Today tasks completed
+        cursor.execute(
+            'SELECT COUNT(*), COALESCE(SUM(duration_seconds), 0) FROM tasks WHERE date = ? AND status = "COMPLETED"',
+            (today_str,)
+        )
+        r2 = cursor.fetchone()
+        tasks_completed_today = r2[0] or 0
+        task_sec_today = r2[1] or 0
+
+        # Active tasks (in progress)
+        cursor.execute('SELECT COUNT(*) FROM tasks WHERE status = "IN_PROGRESS" AND stop_time IS NULL')
+        active_tasks = cursor.fetchone()[0] or 0
+
+        # This week stats
+        today_dt = datetime.date.today()
+        monday_dt = today_dt - datetime.timedelta(days=today_dt.weekday())
+        week_start = monday_dt.isoformat()
+        cursor.execute(
+            'SELECT COUNT(DISTINCT date), COALESCE(SUM(duration_seconds), 0) FROM office_sessions WHERE date >= ? AND date <= ? AND work_mode = "Office"',
+            (week_start, today_str)
+        )
+        r3 = cursor.fetchone()
+        week_office_days = r3[0] or 0
+        week_office_sec = r3[1] or 0
+
+        cursor.execute(
+            'SELECT COALESCE(SUM(duration_seconds), 0) FROM office_sessions WHERE date >= ? AND date <= ? AND work_mode = "Remote"',
+            (week_start, today_str)
+        )
+        week_remote_sec = cursor.fetchone()[0] or 0
+
+        cursor.execute(
+            'SELECT COALESCE(SUM(duration_seconds), 0) FROM tasks WHERE date >= ? AND date <= ?',
+            (week_start, today_str)
+        )
+        week_task_sec = cursor.fetchone()[0] or 0
+
+        # Live user status list (for team grid)
+        cursor.execute('''
+            SELECT u.id, u.name, u.email, u.role,
+                   s.id as session_id, s.work_mode, s.start_time, s.status as session_status,
+                   t.title as active_task,
+                   COALESCE(u.is_active, 1) as is_active
+            FROM users u
+            LEFT JOIN office_sessions s ON s.user_id = u.id AND s.date = ? AND s.status IN ("IN_OFFICE", "WORKING_REMOTE") AND s.stop_time IS NULL
+            LEFT JOIN tasks t ON t.user_id = u.id AND t.status = "IN_PROGRESS" AND t.stop_time IS NULL
+            ORDER BY s.id DESC, u.name ASC
+        ''', (today_str,))
+        user_rows = cursor.fetchall()
+
+        # Deduplicate users (LEFT JOIN may produce multiple rows per user)
+        seen_users = {}
+        for row in user_rows:
+            uid = row[0]
+            if uid not in seen_users:
+                seen_users[uid] = {
+                    'id': uid, 'name': row[1], 'email': row[2], 'role': row[3],
+                    'is_active': bool(row[9]),
+                    'session_status': row[7] or 'OFFLINE',
+                    'work_mode': row[5] or 'Offline',
+                    'start_time': row[6],
+                    'active_task': row[8]
+                }
+
+        conn.close()
+
+        return self._send_json({
+            'users': {'total': total_users, 'active': active_users, 'inactive': (total_users or 0) - (active_users or 0)},
+            'today': {
+                'currently_working': currently_working,
+                'in_office': currently_office,
+                'remote': currently_remote,
+                'offline': (total_users or 0) - currently_working,
+                'office_hours_formatted': f"{office_sec_today // 3600}h {(office_sec_today % 3600) // 60}m",
+                'remote_hours_formatted': f"{remote_sec_today // 3600}h {(remote_sec_today % 3600) // 60}m",
+                'tasks_completed': tasks_completed_today,
+                'task_hours_formatted': f"{task_sec_today // 3600}h {(task_sec_today % 3600) // 60}m",
+                'active_tasks': active_tasks
+            },
+            'week': {
+                'office_days': week_office_days,
+                'office_hours_formatted': f"{week_office_sec // 3600}h {(week_office_sec % 3600) // 60}m",
+                'remote_hours_formatted': f"{week_remote_sec // 3600}h {(week_remote_sec % 3600) // 60}m",
+                'task_hours_formatted': f"{week_task_sec // 3600}h {(week_task_sec % 3600) // 60}m"
+            },
+            'team_status': list(seen_users.values())
+        })
+
+    def handle_admin_users(self, query_params):
+        """Paginated, searchable, filterable user list for admin management."""
+        admin = self._require_admin()
+        if not admin: return
+
+        today_str = datetime.date.today().isoformat()
+        search = query_params.get('search', [''])[0].strip().lower()
+        status_filter = query_params.get('status', ['all'])[0].lower()
+        page = int(query_params.get('page', ['1'])[0])
+        per_page = int(query_params.get('per_page', ['25'])[0])
+        sort_by = query_params.get('sort', ['name'])[0]
+        offset = (page - 1) * per_page
+
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT u.id, u.name, u.email, u.role, COALESCE(u.is_active, 1) as is_active,
+                   u.created_at, u.target_office_days, u.target_office_hours,
+                   COUNT(DISTINCT s.id) as session_count,
+                   COALESCE(SUM(s.duration_seconds), 0) as total_seconds,
+                   ls.work_mode as live_mode, ls.status as live_status, ls.start_time as live_start,
+                   t.title as active_task,
+                   today_s.total_today_sec
+            FROM users u
+            LEFT JOIN office_sessions s ON s.user_id = u.id
+            LEFT JOIN office_sessions ls ON ls.user_id = u.id AND ls.date = ? AND ls.status IN ("IN_OFFICE","WORKING_REMOTE") AND ls.stop_time IS NULL
+            LEFT JOIN tasks t ON t.user_id = u.id AND t.status = "IN_PROGRESS" AND t.stop_time IS NULL
+            LEFT JOIN (
+                SELECT user_id, COALESCE(SUM(duration_seconds),0) as total_today_sec
+                FROM office_sessions WHERE date = ?
+                GROUP BY user_id
+            ) today_s ON today_s.user_id = u.id
+            GROUP BY u.id
+            ORDER BY u.name ASC
+        ''', (today_str, today_str))
+        all_rows = cursor.fetchall()
+        conn.close()
+
+        # Python-side filtering
+        filtered = []
+        for row in all_rows:
+            uid, name, email, role, is_active = row[0], row[1], row[2], row[3], bool(row[4])
+            live_status = row[11] or 'OFFLINE'
+            is_working = live_status in ('IN_OFFICE', 'WORKING_REMOTE')
+
+            if search and search not in name.lower() and search not in email.lower():
+                continue
+            if status_filter == 'active' and not is_active:
+                continue
+            if status_filter == 'inactive' and is_active:
+                continue
+            if status_filter == 'working' and not is_working:
+                continue
+            if status_filter == 'office' and live_status != 'IN_OFFICE':
+                continue
+            if status_filter == 'remote' and live_status != 'WORKING_REMOTE':
+                continue
+
+            total_sec = row[9] or 0
+            today_sec = row[14] or 0
+            filtered.append({
+                'id': uid, 'name': name, 'email': email, 'role': role,
+                'is_active': is_active,
+                'created_at': row[5],
+                'target_days': row[6] or 3,
+                'target_hours': row[7] or 24.0,
+                'session_count': row[8] or 0,
+                'total_hours': total_sec // 3600,
+                'total_minutes': (total_sec % 3600) // 60,
+                'today_hours': today_sec // 3600,
+                'today_minutes': (today_sec % 3600) // 60,
+                'live_mode': row[10] or '',
+                'live_status': live_status,
+                'live_start': row[12],
+                'active_task': row[13]
+            })
+
+        total = len(filtered)
+        paginated = filtered[offset:offset + per_page]
+
+        return self._send_json({
+            'users': paginated,
+            'total': total,
+            'page': page,
+            'per_page': per_page,
+            'pages': max(1, (total + per_page - 1) // per_page)
+        })
+
+    def handle_admin_user_profile(self, target_user_id):
+        """Full profile for a single user including today's stats and weekly compliance."""
+        admin = self._require_admin()
+        if not admin: return
+
+        today_str = datetime.date.today().isoformat()
+        today_dt = datetime.date.today()
+        monday_dt = today_dt - datetime.timedelta(days=today_dt.weekday())
+        week_start = monday_dt.isoformat()
+
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+
+        cursor.execute(
+            'SELECT id, name, email, role, COALESCE(is_active,1), created_at, target_office_days, target_office_hours, preferred_days FROM users WHERE id = ?',
+            (target_user_id,)
+        )
+        u = cursor.fetchone()
+        if not u:
+            conn.close()
+            return self._send_json({'message': 'User not found'}, 404)
+
+        target_days = u[6] or 3
+        target_hours = u[7] or 24.0
+
+        # Today's sessions
+        cursor.execute(
+            'SELECT id, work_mode, start_time, stop_time, duration_seconds, break_reason, status FROM office_sessions WHERE user_id = ? AND date = ? ORDER BY start_time ASC',
+            (target_user_id, today_str)
+        )
+        today_sessions = []
+        today_office_sec = 0
+        today_remote_sec = 0
+        for s in cursor.fetchall():
+            dur = s[4] or 0
+            if s[6] in ('IN_OFFICE', 'WORKING_REMOTE') and not s[3]:
+                try:
+                    st = datetime.datetime.fromisoformat(s[2].replace('Z', '+00:00'))
+                    dur = max(0, int((datetime.datetime.now(datetime.timezone.utc) - st).total_seconds()))
+                except Exception: pass
+            if s[1] == 'Office': today_office_sec += dur
+            else: today_remote_sec += dur
+            today_sessions.append({'id': s[0], 'work_mode': s[1], 'start_time': s[2], 'stop_time': s[3], 'duration_seconds': dur, 'break_reason': s[5], 'status': s[6]})
+
+        # Today's tasks
+        cursor.execute(
+            'SELECT id, title, category, start_time, stop_time, duration_seconds, status FROM tasks WHERE user_id = ? AND date = ? ORDER BY start_time ASC',
+            (target_user_id, today_str)
+        )
+        today_tasks = []
+        today_task_sec = 0
+        for t in cursor.fetchall():
+            dur = t[5] or 0
+            today_task_sec += dur
+            today_tasks.append({'id': t[0], 'title': t[1], 'category': t[2], 'start_time': t[3], 'stop_time': t[4], 'duration_seconds': dur, 'status': t[6]})
+
+        # Weekly compliance
+        cursor.execute(
+            'SELECT COUNT(DISTINCT date), COALESCE(SUM(duration_seconds), 0) FROM office_sessions WHERE user_id = ? AND date >= ? AND date <= ? AND work_mode = "Office"',
+            (target_user_id, week_start, today_str)
+        )
+        wr = cursor.fetchone()
+        week_days = wr[0] or 0
+        week_office_sec = wr[1] or 0
+
+        cursor.execute(
+            'SELECT COALESCE(SUM(duration_seconds), 0) FROM office_sessions WHERE user_id = ? AND date >= ? AND date <= ? AND work_mode = "Remote"',
+            (target_user_id, week_start, today_str)
+        )
+        week_remote_sec = cursor.fetchone()[0] or 0
+
+        # Live status
+        cursor.execute(
+            'SELECT work_mode, start_time, status FROM office_sessions WHERE user_id = ? AND status IN ("IN_OFFICE","WORKING_REMOTE") AND stop_time IS NULL LIMIT 1',
+            (target_user_id,)
+        )
+        live_row = cursor.fetchone()
+
+        conn.close()
+
+        fmt = lambda s: f"{s//3600}h {(s%3600)//60}m"
+        return self._send_json({
+            'user': {
+                'id': u[0], 'name': u[1], 'email': u[2], 'role': u[3],
+                'is_active': bool(u[4]), 'created_at': u[5],
+                'target_days': target_days, 'target_hours': target_hours,
+                'preferred_days': u[8] or 'Mon,Tue,Wed,Thu,Fri'
+            },
+            'live': {
+                'status': live_row[2] if live_row else 'OFFLINE',
+                'work_mode': live_row[0] if live_row else '',
+                'start_time': live_row[1] if live_row else None
+            },
+            'today': {
+                'sessions': today_sessions,
+                'tasks': today_tasks,
+                'office_formatted': fmt(today_office_sec),
+                'remote_formatted': fmt(today_remote_sec),
+                'task_formatted': fmt(today_task_sec),
+                'total_formatted': fmt(today_office_sec + today_remote_sec)
+            },
+            'week': {
+                'office_days': week_days,
+                'target_days': target_days,
+                'office_hours': round(week_office_sec / 3600, 1),
+                'target_hours': target_hours,
+                'office_formatted': fmt(week_office_sec),
+                'remote_formatted': fmt(week_remote_sec),
+                'days_percent': min(100, int(week_days / target_days * 100)) if target_days else 100,
+                'hours_percent': min(100, int(week_office_sec / (target_hours * 3600) * 100)) if target_hours else 100
+            }
+        })
+
+    def handle_admin_user_report(self, target_user_id, query_params):
+        """Hierarchical date-range work history for a user (sessions → tasks tree)."""
+        admin = self._require_admin()
+        if not admin: return
+
+        today_str = datetime.date.today().isoformat()
+        thirty_ago = (datetime.date.today() - datetime.timedelta(days=30)).isoformat()
+        start_date = query_params.get('start_date', [thirty_ago])[0]
+        end_date = query_params.get('end_date', [today_str])[0]
+
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+
+        cursor.execute('SELECT name, email FROM users WHERE id = ?', (target_user_id,))
+        u = cursor.fetchone()
+        if not u:
+            conn.close()
+            return self._send_json({'message': 'User not found'}, 404)
+
+        cursor.execute(
+            'SELECT id, date, work_mode, start_time, stop_time, duration_seconds, break_reason, notes, status FROM office_sessions WHERE user_id = ? AND date >= ? AND date <= ? ORDER BY date ASC, start_time ASC',
+            (target_user_id, start_date, end_date)
+        )
+        sessions = cursor.fetchall()
+
+        cursor.execute(
+            'SELECT id, session_id, date, title, description, category, work_mode, start_time, stop_time, duration_seconds, status FROM tasks WHERE user_id = ? AND date >= ? AND date <= ? ORDER BY date ASC, start_time ASC',
+            (target_user_id, start_date, end_date)
+        )
+        tasks = cursor.fetchall()
+        conn.close()
+
+        # Group tasks by session_id
+        tasks_by_session = {}
+        unlinked_tasks = []
+        for t in tasks:
+            sid = t[1]
+            tdur = t[9] or 0
+            tobj = {
+                'id': t[0], 'title': t[3], 'description': t[4], 'category': t[5] or 'Other',
+                'work_mode': t[6], 'start_time': t[7], 'stop_time': t[8],
+                'duration_seconds': tdur,
+                'duration_formatted': f"{tdur//3600}h {(tdur%3600)//60}m" if tdur >= 3600 else f"{tdur//60}m",
+                'status': t[10]
+            }
+            if sid:
+                tasks_by_session.setdefault(sid, []).append(tobj)
+            else:
+                unlinked_tasks.append(tobj)
+
+        # Group sessions by date
+        days_map = {}
+        for s in sessions:
+            date = s[1]
+            if date not in days_map:
+                try:
+                    dn = datetime.date.fromisoformat(date).strftime('%A')
+                except Exception:
+                    dn = ''
+                days_map[date] = {'date': date, 'day_name': dn, 'office_seconds': 0, 'remote_seconds': 0, 'tasks_count': 0, 'task_seconds': 0, 'sessions': []}
+            dur = s[5] or 0
+            if s[2] == 'Office':
+                days_map[date]['office_seconds'] += dur
+            else:
+                days_map[date]['remote_seconds'] += dur
+            day_tasks = tasks_by_session.get(s[0], [])
+            days_map[date]['tasks_count'] += len(day_tasks)
+            days_map[date]['task_seconds'] += sum(t['duration_seconds'] for t in day_tasks)
+            days_map[date]['sessions'].append({
+                'id': s[0], 'work_mode': s[2], 'start_time': s[3], 'stop_time': s[4],
+                'duration_seconds': dur,
+                'duration_formatted': f"{dur//3600}h {(dur%3600)//60}m" if dur >= 3600 else f"{dur//60}m",
+                'break_reason': s[6], 'notes': s[7], 'status': s[8],
+                'tasks': day_tasks
+            })
+
+        daily_breakdown = sorted(days_map.values(), key=lambda d: d['date'])
+
+        total_office = sum(d['office_seconds'] for d in daily_breakdown)
+        total_remote = sum(d['remote_seconds'] for d in daily_breakdown)
+        total_tasks_sec = sum(d['task_seconds'] for d in daily_breakdown)
+        fmt = lambda s: f"{s//3600}h {(s%3600)//60}m"
+
+        return self._send_json({
+            'user': {'name': u[0], 'email': u[1]},
+            'start_date': start_date,
+            'end_date': end_date,
+            'summary': {
+                'total_office_days': len([d for d in daily_breakdown if d['office_seconds'] > 0]),
+                'total_remote_days': len([d for d in daily_breakdown if d['remote_seconds'] > 0]),
+                'total_office_formatted': fmt(total_office),
+                'total_remote_formatted': fmt(total_remote),
+                'total_work_formatted': fmt(total_office + total_remote),
+                'total_task_formatted': fmt(total_tasks_sec),
+                'sessions_count': len(sessions),
+                'tasks_count': sum(d['tasks_count'] for d in daily_breakdown)
+            },
+            'daily_breakdown': daily_breakdown,
+            'unlinked_tasks': unlinked_tasks
+        })
+
+    def handle_admin_user_reset_password(self, target_user_id, payload):
+        """Admin resets a user's password — password never exposed, force-change flag set."""
+        admin = self._require_admin()
+        if not admin: return
+
+        new_password = payload.get('new_password', '').strip()
+        if not new_password or len(new_password) < 4:
+            return self._send_json({'message': 'New password must be at least 4 characters.'}, 400)
+
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute('SELECT name FROM users WHERE id = ?', (target_user_id,))
+        u = cursor.fetchone()
+        if not u:
+            conn.close()
+            return self._send_json({'message': 'User not found'}, 404)
+
+        new_hash, new_salt = hash_password(new_password)
+        cursor.execute(
+            'UPDATE users SET password_hash = ?, salt = ?, must_change_password = 1 WHERE id = ?',
+            (new_hash, new_salt, target_user_id)
+        )
+        conn.commit()
+        conn.close()
+
+        log_admin_action(
+            admin['sub'], admin.get('email', 'Admin'),
+            'RESET_PASSWORD', target_user_id, u[0],
+            'Admin-initiated password reset. Force-change on next login enabled.'
+        )
+
+        return self._send_json({'message': f"Password for {u[0]} has been reset successfully. They will be required to change it on next login."})
+
+    def handle_admin_user_status(self, target_user_id, payload):
+        """Activate or deactivate a user account."""
+        admin = self._require_admin()
+        if not admin: return
+
+        action = payload.get('action', '').lower()  # 'activate' or 'deactivate'
+        if action not in ('activate', 'deactivate'):
+            return self._send_json({'message': 'Action must be "activate" or "deactivate".'}, 400)
+
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute('SELECT name, role FROM users WHERE id = ?', (target_user_id,))
+        u = cursor.fetchone()
+        if not u:
+            conn.close()
+            return self._send_json({'message': 'User not found'}, 404)
+
+        if u[1] == 'ADMIN' and action == 'deactivate':
+            conn.close()
+            return self._send_json({'message': 'Cannot deactivate an administrator account.'}, 400)
+
+        new_status = 1 if action == 'activate' else 0
+        cursor.execute('UPDATE users SET is_active = ? WHERE id = ?', (new_status, target_user_id))
+        conn.commit()
+        conn.close()
+
+        log_admin_action(
+            admin['sub'], admin.get('email', 'Admin'),
+            f"USER_{action.upper()}D", target_user_id, u[0],
+            f"Account {'activated' if new_status else 'deactivated'} by admin."
+        )
+
+        return self._send_json({'message': f"Account for {u[0]} has been {'activated' if new_status else 'deactivated'}.", 'is_active': bool(new_status)})
+
+    def handle_admin_user_update(self, target_user_id, payload):
+        """Update user's name, email, or weekly targets."""
+        admin = self._require_admin()
+        if not admin: return
+
+        name = payload.get('name', '').strip()
+        target_days = payload.get('target_office_days')
+        target_hours = payload.get('target_office_hours')
+        preferred_days = payload.get('preferred_days', '').strip()
+
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute('SELECT name FROM users WHERE id = ?', (target_user_id,))
+        u = cursor.fetchone()
+        if not u:
+            conn.close()
+            return self._send_json({'message': 'User not found'}, 404)
+
+        updates = []
+        params = []
+        if name:
+            updates.append('name = ?')
+            params.append(name)
+        if target_days is not None:
+            updates.append('target_office_days = ?')
+            params.append(int(target_days))
+        if target_hours is not None:
+            updates.append('target_office_hours = ?')
+            params.append(float(target_hours))
+        if preferred_days:
+            updates.append('preferred_days = ?')
+            params.append(preferred_days)
+
+        if updates:
+            params.append(target_user_id)
+            cursor.execute(f'UPDATE users SET {", ".join(updates)} WHERE id = ?', params)
+            conn.commit()
+
+        conn.close()
+
+        log_admin_action(
+            admin['sub'], admin.get('email', 'Admin'),
+            'USER_UPDATED', target_user_id, u[0],
+            f"Fields updated: {', '.join([u.split(' = ')[0] for u in updates])}"
+        )
+
+        return self._send_json({'message': f"User {u[0]} updated successfully."})
+
+    def handle_admin_user_export(self, target_user_id, query_params):
+        """Export a specific user's work data as CSV."""
+        admin = self._require_admin()
+        if not admin: return
+
+        today_str = datetime.date.today().isoformat()
+        thirty_ago = (datetime.date.today() - datetime.timedelta(days=30)).isoformat()
+        start_date = query_params.get('start_date', [thirty_ago])[0]
+        end_date = query_params.get('end_date', [today_str])[0]
+
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute('SELECT name, email FROM users WHERE id = ?', (target_user_id,))
+        u = cursor.fetchone()
+        if not u:
+            conn.close()
+            return self._send_json({'message': 'User not found'}, 404)
+
+        emp_name, emp_email = u[0], u[1]
+
+        cursor.execute(
+            'SELECT date, work_mode, start_time, stop_time, duration_seconds, break_reason, status FROM office_sessions WHERE user_id = ? AND date >= ? AND date <= ? ORDER BY date ASC, start_time ASC',
+            (target_user_id, start_date, end_date)
+        )
+        session_rows = cursor.fetchall()
+
+        cursor.execute(
+            'SELECT date, title, category, work_mode, start_time, stop_time, duration_seconds, status, description FROM tasks WHERE user_id = ? AND date >= ? AND date <= ? ORDER BY date ASC, start_time ASC',
+            (target_user_id, start_date, end_date)
+        )
+        task_rows = cursor.fetchall()
+        conn.close()
+
+        lines = []
+        lines.append(f'# WORKPULSE ADMIN EXPORT — {emp_name} <{emp_email}>')
+        lines.append(f'# Date Range: {start_date} to {end_date}')
+        lines.append(f'# Exported by Admin on {today_str}')
+        lines.append('')
+        lines.append('# SECTION 1: WORK SESSIONS')
+        lines.append('Date,Work Mode,Start Time,Stop Time,Duration Minutes,Break Reason,Status')
+        for s in session_rows:
+            dur = (s[4] or 0) // 60
+            st = s[2].split('T')[1][:5] if s[2] and 'T' in s[2] else (s[2] or '')
+            sp = s[3].split('T')[1][:5] if s[3] and 'T' in s[3] else ''
+            lines.append(f'"{s[0]}","{s[1]}","{st}","{sp}",{dur},"{s[5] or ""}","{s[6]}"')
+
+        lines.append('')
+        lines.append('# SECTION 2: TASKS & ACTIVITIES')
+        lines.append('Date,Title,Category,Work Mode,Start,Stop,Duration Minutes,Status,Notes')
+        for t in task_rows:
+            dur = (t[6] or 0) // 60
+            st = t[4].split('T')[1][:5] if t[4] and 'T' in t[4] else (t[4] or '')
+            sp = t[5].split('T')[1][:5] if t[5] and 'T' in t[5] else ''
+            title = (t[1] or '').replace('"', '""')
+            desc = (t[8] or '').replace('"', '""')
+            lines.append(f'"{t[0]}","{title}","{t[2] or "Other"}","{t[3]}","{st}","{sp}",{dur},"{t[7]}","{desc}"')
+
+        csv_content = '\n'.join(lines).encode('utf-8-sig')
+
+        log_admin_action(
+            admin['sub'], admin.get('email', 'Admin'),
+            'USER_DATA_EXPORTED', target_user_id, emp_name,
+            f"Exported data for {start_date} to {end_date}"
+        )
+
+        filename = f"WorkPulse_{emp_name.replace(' ','_')}_{start_date}_to_{end_date}.csv"
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/csv; charset=utf-8')
+        self.send_header('Content-Disposition', f'attachment; filename="{filename}"')
+        self.send_header('Content-Length', str(len(csv_content)))
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        self.wfile.write(csv_content)
+
+    def handle_admin_audit_log(self, query_params):
+        """Returns the admin audit log, paginated."""
+        admin = self._require_admin()
+        if not admin: return
+
+        page = int(query_params.get('page', ['1'])[0])
+        per_page = int(query_params.get('per_page', ['50'])[0])
+        offset = (page - 1) * per_page
+
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+
+        cursor.execute('SELECT COUNT(*) FROM admin_audit_log')
+        total = cursor.fetchone()[0]
+
+        cursor.execute(
+            'SELECT id, admin_name, action, target_user_name, details, created_at FROM admin_audit_log ORDER BY created_at DESC LIMIT ? OFFSET ?',
+            (per_page, offset)
+        )
+        rows = cursor.fetchall()
+        conn.close()
+
+        entries = [{'id': r[0], 'admin': r[1], 'action': r[2], 'target': r[3], 'details': r[4], 'timestamp': r[5]} for r in rows]
+        return self._send_json({'entries': entries, 'total': total, 'page': page, 'per_page': per_page})
+
+    def handle_admin_categories(self):
+        """Returns all categories with usage counts across all users."""
+        admin = self._require_admin()
+        if not admin: return
+
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT COALESCE(category, "Other") as cat, COUNT(*) as cnt FROM tasks WHERE category IS NOT NULL GROUP BY cat ORDER BY cnt DESC'
+        )
+        rows = cursor.fetchall()
+        conn.close()
+
+        # Merge with defaults
+        used = {r[0]: r[1] for r in rows}
+        all_cats = []
+        for c in DEFAULT_CATEGORIES:
+            all_cats.append({'name': c, 'count': used.get(c, 0), 'is_default': True})
+        for name, count in used.items():
+            if name not in DEFAULT_CATEGORIES:
+                all_cats.append({'name': name, 'count': count, 'is_default': False})
+
+        return self._send_json({'categories': all_cats})
 
 # ==============================================================================
 # MAIN ENTRYPOINT

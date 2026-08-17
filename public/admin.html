@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WorkPulse — Enterprise Admin Management Portal</title>
+  
+  <!-- Google Fonts: Inter & Outfit -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  
+  <!-- Admin Stylesheet -->
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+
+  <div class="admin-shell">
+    
+    <!-- ====================================================================== -->
+    <!-- SIDEBAR NAVIGATION -->
+    <!-- ====================================================================== -->
+    <aside id="adminSidebar" class="admin-sidebar">
+      
+      <!-- Brand Header -->
+      <div class="sidebar-brand">
+        <div class="sidebar-brand-icon">
+          <i class="fa-solid fa-shield-halved"></i>
+        </div>
+        <div class="sidebar-brand-text">
+          <div class="brand-name">WorkPulse</div>
+          <div class="brand-sub">Enterprise Admin Center</div>
+        </div>
+        <button class="sidebar-toggle-btn" onclick="toggleSidebarCollapse()" title="Toggle Sidebar">
+          <i class="fa-solid fa-bars-staggered"></i>
+        </button>
+      </div>
+
+      <!-- Navigation Links -->
+      <nav class="sidebar-nav">
+        
+        <div class="nav-section-label">Main Administration</div>
+        
+        <div class="nav-item active" onclick="switchAdminPage('dashboard', this)">
+          <div class="nav-icon"><i class="fa-solid fa-chart-pie"></i></div>
+          <span class="nav-label">Dashboard</span>
+          <span class="nav-tooltip">Dashboard</span>
+        </div>
+
+        <div class="nav-item" onclick="switchAdminPage('users', this)">
+          <div class="nav-icon"><i class="fa-solid fa-users-gear"></i></div>
+          <span class="nav-label">User Management</span>
+          <span id="navUsersCountBadge" class="nav-badge">0</span>
+          <span class="nav-tooltip">Users</span>
+        </div>
+
+        <div class="nav-item" onclick="switchAdminPage('history', this)">
+          <div class="nav-icon"><i class="fa-solid fa-clock-rotate-left"></i></div>
+          <span class="nav-label">Work & Task History</span>
+          <span class="nav-tooltip">History</span>
+        </div>
+
+        <div class="nav-section-label">Operations & Governance</div>
+
+        <div class="nav-item" onclick="switchAdminPage('categories', this)">
+          <div class="nav-icon"><i class="fa-solid fa-tags"></i></div>
+          <span class="nav-label">Categories</span>
+          <span class="nav-tooltip">Categories</span>
+        </div>
+
+        <div class="nav-item" onclick="switchAdminPage('audit', this)">
+          <div class="nav-icon"><i class="fa-solid fa-clipboard-list"></i></div>
+          <span class="nav-label">Admin Audit Log</span>
+          <span class="nav-tooltip">Audit Log</span>
+        </div>
+
+        <div class="nav-item" onclick="switchAdminPage('reports', this)">
+          <div class="nav-icon"><i class="fa-solid fa-file-excel"></i></div>
+          <span class="nav-label">Exports & Reports</span>
+          <span class="nav-tooltip">Reports</span>
+        </div>
+
+        <div class="nav-section-label">Workspace</div>
+
+        <a href="/" class="nav-item" style="text-decoration: none;">
+          <div class="nav-icon"><i class="fa-solid fa-arrow-left"></i></div>
+          <span class="nav-label">User Command Center</span>
+          <span class="nav-tooltip">Back to App</span>
+        </a>
+
+      </nav>
+
+      <!-- Sidebar Footer (Admin Profile Summary) -->
+      <div class="sidebar-footer">
+        <div class="admin-user-pill" onclick="switchAdminPage('dashboard')">
+          <div id="adminSidebarAvatar" class="admin-avatar">A</div>
+          <div class="admin-user-info">
+            <div id="adminSidebarName" class="admin-user-name">Administrator</div>
+            <div class="admin-user-role">Super Admin</div>
+          </div>
+        </div>
+      </div>
+
+    </aside>
+
+
+    <!-- ====================================================================== -->
+    <!-- MAIN CONTENT SHELL -->
+    <!-- ====================================================================== -->
+    <main id="adminMain" class="admin-main">
+      
+      <!-- Topbar Header -->
+      <header class="admin-topbar">
+        <button class="mobile-menu-btn" onclick="toggleMobileSidebar()">
+          <i class="fa-solid fa-bars"></i>
+        </button>
+
+        <h2 id="topbarTitle" class="topbar-title">Overview Dashboard</h2>
+
+        <!-- Quick Search (Global) -->
+        <div class="topbar-search">
+          <i class="fa-solid fa-magnifying-glass topbar-search-icon"></i>
+          <input type="text" id="topbarGlobalSearch" placeholder="Search employees, emails..." oninput="handleGlobalSearch(this.value)">
+        </div>
+
+        <!-- Topbar Actions -->
+        <div class="topbar-actions">
+          <button class="topbar-icon-btn" onclick="refreshCurrentAdminPage()" title="Refresh Data">
+            <i class="fa-solid fa-rotate-right"></i>
+          </button>
+          
+          <a href="/" class="topbar-icon-btn" title="Back to User Workspace">
+            <i class="fa-solid fa-house-laptop"></i>
+          </a>
+
+          <button class="topbar-logout-btn" onclick="handleAdminLogout()">
+            <i class="fa-solid fa-arrow-right-from-bracket"></i>
+            <span>Log Out</span>
+          </button>
+        </div>
+      </header>
+
+
+      <!-- ==================================================================== -->
+      <!-- VIEW 1: DASHBOARD OVERVIEW -->
+      <!-- ==================================================================== -->
+      <section id="pageDashboard" class="admin-page active">
+        
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">Executive Command Dashboard</h1>
+            <p class="page-subtitle">Real-time workforce attendance, live work modes, and productivity indicators.</p>
+          </div>
+          <div style="display: flex; gap: 0.5rem;">
+            <button class="btn btn-primary btn-sm" onclick="switchAdminPage('users')">
+              <i class="fa-solid fa-user-plus"></i> View All Users
+            </button>
+          </div>
+        </div>
+
+        <!-- Primary KPI Tiles -->
+        <div class="kpi-grid">
+          
+          <div class="kpi-tile">
+            <div class="kpi-icon indigo"><i class="fa-solid fa-users"></i></div>
+            <div class="kpi-body">
+              <div id="statTotalUsers" class="kpi-value">0</div>
+              <div class="kpi-label">Total Accounts</div>
+              <div id="statActiveUsersSub" class="kpi-sub">0 active employees</div>
+            </div>
+          </div>
+
+          <div class="kpi-tile">
+            <div class="kpi-icon emerald"><i class="fa-solid fa-building-circle-check"></i></div>
+            <div class="kpi-body">
+              <div id="statInOfficeToday" class="kpi-value">0</div>
+              <div class="kpi-label">In Office Today</div>
+              <div class="kpi-sub">Currently clocked in</div>
+            </div>
+          </div>
+
+          <div class="kpi-tile">
+            <div class="kpi-icon sky"><i class="fa-solid fa-house-laptop"></i></div>
+            <div class="kpi-body">
+              <div id="statRemoteToday" class="kpi-value">0</div>
+              <div class="kpi-label">Remote / WFH</div>
+              <div class="kpi-sub">Working offsite</div>
+            </div>
+          </div>
+
+          <div class="kpi-tile">
+            <div class="kpi-icon slate"><i class="fa-solid fa-user-slash"></i></div>
+            <div class="kpi-body">
+              <div id="statOfflineToday" class="kpi-value">0</div>
+              <div class="kpi-label">Offline Today</div>
+              <div class="kpi-sub">No active session</div>
+            </div>
+          </div>
+
+          <div class="kpi-tile">
+            <div class="kpi-icon amber"><i class="fa-solid fa-business-time"></i></div>
+            <div class="kpi-body">
+              <div id="statOfficeHoursToday" class="kpi-value">0h 0m</div>
+              <div class="kpi-label">Office Time Today</div>
+              <div class="kpi-sub">Total on-premise</div>
+            </div>
+          </div>
+
+          <div class="kpi-tile">
+            <div class="kpi-icon pink"><i class="fa-solid fa-list-check"></i></div>
+            <div class="kpi-body">
+              <div id="statTasksCompletedToday" class="kpi-value">0</div>
+              <div class="kpi-label">Tasks Completed</div>
+              <div id="statTaskTimeTodaySub" class="kpi-sub">0h 0m logged</div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Live Workforce Status Grid -->
+        <div class="glass-card">
+          <div class="card-head">
+            <div class="card-title">
+              <i class="fa-solid fa-satellite-dish"></i> Live Team Presence Status
+            </div>
+            <span style="font-size: 0.75rem; color: var(--text-dim);">Auto-refreshes with activity</span>
+          </div>
+
+          <div id="teamStatusGrid" class="team-grid">
+            <!-- Dynamically Populated -->
+          </div>
+        </div>
+
+        <!-- Weekly Summary Card -->
+        <div class="glass-card">
+          <div class="card-head">
+            <div class="card-title">
+              <i class="fa-solid fa-calendar-week"></i> Organization Weekly Aggregate
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem;">
+            <div class="stat-mini">
+              <div id="statWeekOfficeDays" class="stat-mini-value">0</div>
+              <div class="stat-mini-label">Total Office Days Logged</div>
+            </div>
+            <div class="stat-mini">
+              <div id="statWeekOfficeHours" class="stat-mini-value">0h 0m</div>
+              <div class="stat-mini-label">Weekly Office Hours</div>
+            </div>
+            <div class="stat-mini">
+              <div id="statWeekRemoteHours" class="stat-mini-value">0h 0m</div>
+              <div class="stat-mini-label">Weekly Remote Hours</div>
+            </div>
+            <div class="stat-mini">
+              <div id="statWeekTaskHours" class="stat-mini-value">0h 0m</div>
+              <div class="stat-mini-label">Weekly Task Productivity</div>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+
+      <!-- ==================================================================== -->
+      <!-- VIEW 2: USER MANAGEMENT TABLE -->
+      <!-- ==================================================================== -->
+      <section id="pageUsers" class="admin-page">
+        
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">User Accounts & Workforce Directory</h1>
+            <p class="page-subtitle">Inspect individual employee targets, live status, time logged, and account actions.</p>
+          </div>
+        </div>
+
+        <!-- Filter & Search Bar -->
+        <div class="glass-card" style="padding: 1rem 1.25rem;">
+          <div class="filter-bar">
+            
+            <div class="search-box">
+              <i class="fa-solid fa-magnifying-glass search-box-icon"></i>
+              <input type="text" id="userSearchInput" placeholder="Filter by name or email..." oninput="handleUserFilterChange()">
+            </div>
+
+            <div class="filter-chips">
+              <button class="filter-chip active" data-filter="all" onclick="setUserStatusFilter('all', this)">All</button>
+              <button class="filter-chip" data-filter="working" onclick="setUserStatusFilter('working', this)">Currently Working</button>
+              <button class="filter-chip" data-filter="office" onclick="setUserStatusFilter('office', this)">In Office</button>
+              <button class="filter-chip" data-filter="remote" onclick="setUserStatusFilter('remote', this)">Remote / WFH</button>
+              <button class="filter-chip" data-filter="active" onclick="setUserStatusFilter('active', this)">Active Accounts</button>
+              <button class="filter-chip" data-filter="inactive" onclick="setUserStatusFilter('inactive', this)">Deactivated</button>
+            </div>
+
+          </div>
+
+          <!-- Table Container -->
+          <div class="admin-table-wrap">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>Employee</th>
+                  <th>Role</th>
+                  <th>Account Status</th>
+                  <th>Current Mode</th>
+                  <th>Today Logged</th>
+                  <th>Total Time</th>
+                  <th>Target (Days/Hrs)</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="usersTableBody">
+                <!-- Dynamically Populated -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Pagination Bar -->
+          <div class="pagination">
+            <div id="usersPaginationInfo" class="pagination-info">Showing 0 of 0 users</div>
+            <div id="usersPaginationControls" class="pagination-controls">
+              <!-- Dynamically Populated -->
+            </div>
+          </div>
+
+        </div>
+
+      </section>
+
+
+      <!-- ==================================================================== -->
+      <!-- VIEW 3: WORK & TASK HISTORY (Full Hierarchical Tree) -->
+      <!-- ==================================================================== -->
+      <section id="pageHistory" class="admin-page">
+        
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">Employee Work & Task History Inspector</h1>
+            <p class="page-subtitle">Inspect hierarchical attendance sessions and child tasks for any team member across custom date ranges.</p>
+          </div>
+        </div>
+
+        <div class="glass-card">
+          
+          <!-- User Selector & Controls -->
+          <div class="history-controls">
+            
+            <div style="flex: 1; min-width: 200px; max-width: 280px;">
+              <label style="font-size: 0.72rem; color: var(--text-dim); display: block; margin-bottom: 4px; font-weight: 600;">SELECT EMPLOYEE:</label>
+              <select id="historyUserSelect" class="form-control" style="background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); border-radius: var(--radius-sm); padding: 0.45rem 0.75rem; color: var(--text-main); width: 100%;" onchange="loadUserHistoryReport()">
+                <!-- Populated with users -->
+              </select>
+            </div>
+
+            <!-- Date Range Presets -->
+            <div style="flex: 2; min-width: 300px;">
+              <label style="font-size: 0.72rem; color: var(--text-dim); display: block; margin-bottom: 4px; font-weight: 600;">PRESET RANGE:</label>
+              <div class="date-range-presets">
+                <button class="preset-chip" onclick="selectAdminHistoryPreset('today', this)">Today</button>
+                <button class="preset-chip" onclick="selectAdminHistoryPreset('yesterday', this)">Yesterday</button>
+                <button class="preset-chip" onclick="selectAdminHistoryPreset('this_week', this)">This Week</button>
+                <button class="preset-chip" onclick="selectAdminHistoryPreset('last_week', this)">Last Week</button>
+                <button class="preset-chip active" onclick="selectAdminHistoryPreset('last_30_days', this)">Last 30 Days</button>
+                <button class="preset-chip" onclick="selectAdminHistoryPreset('this_month', this)">This Month</button>
+                <button class="preset-chip" onclick="selectAdminHistoryPreset('last_month', this)">Last Month</button>
+              </div>
+            </div>
+
+            <!-- Custom Date Inputs -->
+            <div class="date-inputs">
+              <div>
+                <label style="font-size: 0.72rem; color: var(--text-dim); display: block; margin-bottom: 4px; font-weight: 600;">FROM:</label>
+                <input type="date" id="historyStartDate">
+              </div>
+              <div>
+                <label style="font-size: 0.72rem; color: var(--text-dim); display: block; margin-bottom: 4px; font-weight: 600;">TO:</label>
+                <input type="date" id="historyEndDate">
+              </div>
+              <div style="margin-top: 18px; display: flex; gap: 0.4rem;">
+                <button class="btn btn-primary btn-sm" onclick="loadUserHistoryReport()">
+                  <i class="fa-solid fa-magnifying-glass"></i> Apply
+                </button>
+                <button class="btn btn-emerald btn-sm" onclick="exportSelectedUserReport()">
+                  <i class="fa-solid fa-file-arrow-down"></i> CSV
+                </button>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Summary KPI Pills for Range -->
+          <div id="historySummaryPills" class="history-summary-pills">
+            <!-- Dynamically populated -->
+          </div>
+
+          <!-- Hierarchical Tree Container -->
+          <div id="historyTreeContainer">
+            <!-- Day -> Session -> Task tree -->
+          </div>
+
+        </div>
+
+      </section>
+
+
+      <!-- ==================================================================== -->
+      <!-- VIEW 4: CATEGORIES MANAGEMENT -->
+      <!-- ==================================================================== -->
+      <section id="pageCategories" class="admin-page">
+        
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">Activity & Task Categories</h1>
+            <p class="page-subtitle">Review all task categories configured across the entire organization and their usage count.</p>
+          </div>
+        </div>
+
+        <div class="glass-card">
+          <div class="card-head">
+            <div class="card-title">
+              <i class="fa-solid fa-tags"></i> Registered Categories Directory
+            </div>
+          </div>
+
+          <div id="categoriesGrid" class="categories-grid">
+            <!-- Dynamically Populated -->
+          </div>
+        </div>
+
+      </section>
+
+
+      <!-- ==================================================================== -->
+      <!-- VIEW 5: ADMIN AUDIT LOG -->
+      <!-- ==================================================================== -->
+      <section id="pageAudit" class="admin-page">
+        
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">Administrative Audit Log</h1>
+            <p class="page-subtitle">Immutable chronological trail of all administrative actions, password resets, account toggles, and data exports.</p>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="fetchAuditLogData()">
+            <i class="fa-solid fa-rotate-right"></i> Refresh Log
+          </button>
+        </div>
+
+        <div class="glass-card">
+          <div id="auditLogList">
+            <!-- Dynamically Populated -->
+          </div>
+        </div>
+
+      </section>
+
+
+      <!-- ==================================================================== -->
+      <!-- VIEW 6: REPORTS & EXPORTS -->
+      <!-- ==================================================================== -->
+      <section id="pageReports" class="admin-page">
+        
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">Reports & Data Exports</h1>
+            <p class="page-subtitle">Generate organization and individual compliance statements in CSV/Excel format.</p>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.25rem;">
+          
+          <!-- Individual Employee Export Card -->
+          <div class="glass-card">
+            <div class="card-head">
+              <div class="card-title"><i class="fa-solid fa-file-csv"></i> Employee Multi-Section Export</div>
+            </div>
+            <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 1rem;">
+              Download a complete statement containing executive rollups, attendance sessions, and linked child tasks for a specific team member.
+            </p>
+
+            <div class="modal-form-group">
+              <label>Select Employee:</label>
+              <select id="exportReportUserSelect" class="form-control" style="background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); border-radius: var(--radius-md); padding: 0.6rem 0.85rem; color: var(--text-main); width: 100%;">
+                <!-- Populated dynamically -->
+              </select>
+            </div>
+
+            <div style="display: flex; gap: 0.6rem; margin-bottom: 1rem;">
+              <div style="flex: 1;">
+                <label style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-bottom: 4px;">From Date:</label>
+                <input type="date" id="exportReportStartDate" class="form-control" style="background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); border-radius: var(--radius-md); padding: 0.5rem 0.75rem; color: var(--text-main); width: 100%; color-scheme: dark;">
+              </div>
+              <div style="flex: 1;">
+                <label style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-bottom: 4px;">To Date:</label>
+                <input type="date" id="exportReportEndDate" class="form-control" style="background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); border-radius: var(--radius-md); padding: 0.5rem 0.75rem; color: var(--text-main); width: 100%; color-scheme: dark;">
+              </div>
+            </div>
+
+            <button class="btn btn-primary" style="width: 100%;" onclick="triggerAdminReportExport()">
+              <i class="fa-solid fa-file-arrow-down"></i> Download Employee CSV Report
+            </button>
+          </div>
+
+          <!-- Organization Monthly Export Card -->
+          <div class="glass-card">
+            <div class="card-head">
+              <div class="card-title"><i class="fa-solid fa-calendar-check"></i> Monthly Compliance Statement</div>
+            </div>
+            <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 1rem;">
+              Download monthly attendance records for quick compliance auditing.
+            </p>
+
+            <div class="modal-form-group">
+              <label>Select Month:</label>
+              <input type="month" id="exportMonthlyPicker" class="form-control" style="background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); border-radius: var(--radius-md); padding: 0.6rem 0.85rem; color: var(--text-main); width: 100%; color-scheme: dark;">
+            </div>
+
+            <button class="btn btn-emerald" style="width: 100%; margin-top: 1.25rem;" onclick="triggerAdminMonthlyExport()">
+              <i class="fa-solid fa-file-arrow-down"></i> Download Monthly Statement
+            </button>
+          </div>
+
+        </div>
+
+      </section>
+
+    </main>
+
+  </div>
+
+
+  <!-- ====================================================================== -->
+  <!-- SLIDE-IN USER PROFILE DRAWER -->
+  <!-- ====================================================================== -->
+  <div id="drawerOverlay" class="drawer-overlay" onclick="closeUserDrawer()"></div>
+
+  <aside id="userDrawer" class="user-drawer">
+    
+    <div class="drawer-header">
+      <div id="drawerAvatar" class="drawer-header-avatar">U</div>
+      <div class="drawer-header-info">
+        <div id="drawerName" class="drawer-header-name">Employee Name</div>
+        <div id="drawerEmail" class="drawer-header-email">user@company.com</div>
+      </div>
+      <button class="drawer-close" onclick="closeUserDrawer()">&times;</button>
+    </div>
+
+    <!-- Quick Action Bar in Drawer -->
+    <div class="drawer-actions">
+      <button class="btn btn-amber btn-sm" onclick="openResetPasswordModalForDrawer()">
+        <i class="fa-solid fa-key"></i> Reset Password
+      </button>
+      <button id="drawerToggleStatusBtn" class="btn btn-red btn-sm" onclick="toggleUserStatusFromDrawer()">
+        <i class="fa-solid fa-user-xmark"></i> Deactivate
+      </button>
+      <button class="btn btn-sky btn-sm" onclick="openEditUserModalFromDrawer()">
+        <i class="fa-solid fa-user-pen"></i> Edit Targets
+      </button>
+      <button class="btn btn-emerald btn-sm" onclick="exportUserFromDrawer()">
+        <i class="fa-solid fa-file-arrow-down"></i> Export CSV
+      </button>
+    </div>
+
+    <!-- Drawer Navigation Tabs -->
+    <div class="drawer-body">
+      
+      <div class="drawer-tabs">
+        <button class="drawer-tab active" onclick="switchDrawerTab('profile', this)">Profile & Targets</button>
+        <button class="drawer-tab" onclick="switchDrawerTab('today', this)">Today's Activity</button>
+        <button class="drawer-tab" onclick="switchDrawerTab('history', this)">Work History</button>
+      </div>
+
+      <!-- Tab 1: Profile & Weekly Compliance -->
+      <div id="drawerTabProfile" class="drawer-tab-content">
+        
+        <div class="info-grid">
+          <div class="info-item">
+            <div class="info-label">Account Role</div>
+            <div id="drawerRole" class="info-value">USER</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Account Status</div>
+            <div id="drawerStatus" class="info-value">Active</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Joined Date</div>
+            <div id="drawerJoined" class="info-value">—</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Preferred Days</div>
+            <div id="drawerPreferredDays" class="info-value">Mon, Tue, Wed, Thu, Fri</div>
+          </div>
+        </div>
+
+        <h4 style="font-size: 0.88rem; font-weight: 600; margin: 1.25rem 0 0.75rem; color: var(--text-main);">
+          <i class="fa-solid fa-bullseye" style="color: var(--accent-primary);"></i> Weekly Target Compliance
+        </h4>
+
+        <div class="compliance-bar-wrap">
+          <div class="compliance-bar-label">
+            <span>Office Days (<span id="drawerDaysText">0 / 3</span> days)</span>
+            <strong id="drawerDaysPercent">0%</strong>
+          </div>
+          <div class="compliance-bar-track">
+            <div id="drawerDaysBar" class="compliance-bar-fill emerald" style="width: 0%;"></div>
+          </div>
+        </div>
+
+        <div class="compliance-bar-wrap">
+          <div class="compliance-bar-label">
+            <span>Office Hours (<span id="drawerHoursText">0 / 24</span> hrs)</span>
+            <strong id="drawerHoursPercent">0%</strong>
+          </div>
+          <div class="compliance-bar-track">
+            <div id="drawerHoursBar" class="compliance-bar-fill indigo" style="width: 0%;"></div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Tab 2: Today's Live Activity -->
+      <div id="drawerTabToday" class="drawer-tab-content" style="display: none;">
+        
+        <div class="stat-row-grid">
+          <div class="stat-mini">
+            <div id="drawerTodayTotal" class="stat-mini-value">0h 0m</div>
+            <div class="stat-mini-label">Total Work</div>
+          </div>
+          <div class="stat-mini">
+            <div id="drawerTodayOffice" class="stat-mini-value">0h 0m</div>
+            <div class="stat-mini-label">Office Time</div>
+          </div>
+          <div class="stat-mini">
+            <div id="drawerTodayRemote" class="stat-mini-value">0h 0m</div>
+            <div class="stat-mini-label">Remote Time</div>
+          </div>
+          <div class="stat-mini">
+            <div id="drawerTodayTask" class="stat-mini-value">0h 0m</div>
+            <div class="stat-mini-label">Task Time</div>
+          </div>
+        </div>
+
+        <h4 style="font-size: 0.85rem; font-weight: 600; margin: 1rem 0 0.5rem;">Today's Sessions</h4>
+        <div id="drawerTodaySessionsList"></div>
+
+        <h4 style="font-size: 0.85rem; font-weight: 600; margin: 1.25rem 0 0.5rem;">Today's Tasks & Activities</h4>
+        <div id="drawerTodayTasksList"></div>
+
+      </div>
+
+      <!-- Tab 3: Historical Activity -->
+      <div id="drawerTabHistory" class="drawer-tab-content" style="display: none;">
+        <div style="margin-bottom: 0.85rem; display: flex; gap: 0.5rem; align-items: center;">
+          <input type="date" id="drawerHistStart" style="flex: 1; padding: 0.4rem; font-size: 0.8rem; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); border-radius: 6px; color: #fff; color-scheme: dark;">
+          <input type="date" id="drawerHistEnd" style="flex: 1; padding: 0.4rem; font-size: 0.8rem; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); border-radius: 6px; color: #fff; color-scheme: dark;">
+          <button class="btn btn-primary btn-sm" onclick="loadDrawerHistoryReport()">Apply</button>
+        </div>
+        <div id="drawerHistoryTree"></div>
+      </div>
+
+    </div>
+
+  </aside>
+
+
+  <!-- ====================================================================== -->
+  <!-- MODAL: SECURE ADMIN PASSWORD RESET -->
+  <!-- ====================================================================== -->
+  <div id="resetPasswordModal" class="modal-backdrop">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title">
+          <i class="fa-solid fa-key" style="color: var(--accent-amber);"></i> Secure Password Reset
+        </div>
+        <button class="modal-close-btn" onclick="closeResetPasswordModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.84rem; color: var(--text-muted); margin-bottom: 1rem;">
+          Reset password for <strong id="resetModalTargetName" style="color: var(--text-main);">User</strong>. Existing passwords are encrypted and cannot be viewed.
+        </p>
+
+        <div class="modal-form-group">
+          <label for="adminNewPasswordInput">New Temporary Password *</label>
+          <input type="text" id="adminNewPasswordInput" placeholder="Enter new password (min 4 characters)" autocomplete="off">
+        </div>
+
+        <div style="font-size: 0.76rem; color: var(--text-dim); background: rgba(245,158,11,0.08); border-left: 3px solid var(--accent-amber); padding: 0.6rem 0.8rem; border-radius: 4px;">
+          <i class="fa-solid fa-info-circle"></i> The user will be required to update this temporary password upon their next login.
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeResetPasswordModal()">Cancel</button>
+        <button class="btn btn-amber" onclick="submitAdminPasswordReset()">
+          <i class="fa-solid fa-check"></i> Set New Password
+        </button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ====================================================================== -->
+  <!-- MODAL: EDIT USER TARGETS & PROFILE -->
+  <!-- ====================================================================== -->
+  <div id="editUserModal" class="modal-backdrop">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title">
+          <i class="fa-solid fa-user-pen" style="color: var(--accent-primary);"></i> Edit User Profile & Targets
+        </div>
+        <button class="modal-close-btn" onclick="closeEditUserModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        
+        <input type="hidden" id="editUserIdHidden">
+
+        <div class="modal-form-group">
+          <label for="editUserNameInput">Full Name *</label>
+          <input type="text" id="editUserNameInput" required>
+        </div>
+
+        <div style="display: flex; gap: 0.75rem;">
+          <div class="modal-form-group" style="flex: 1;">
+            <label for="editUserDaysInput">Target Office Days / Week</label>
+            <input type="number" id="editUserDaysInput" min="1" max="7" value="3">
+          </div>
+          <div class="modal-form-group" style="flex: 1;">
+            <label for="editUserHoursInput">Target Office Hours / Week</label>
+            <input type="number" id="editUserHoursInput" min="1" max="80" step="0.5" value="24.0">
+          </div>
+        </div>
+
+        <div class="modal-form-group">
+          <label for="editUserPrefDaysInput">Preferred Working Days</label>
+          <input type="text" id="editUserPrefDaysInput" placeholder="e.g. Mon,Tue,Wed,Thu,Fri">
+        </div>
+
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeEditUserModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="submitEditUserDetails()">
+          <i class="fa-solid fa-floppy-disk"></i> Save Changes
+        </button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- Toast Notification Container -->
+  <div id="adminToastContainer" class="admin-toast-container"></div>
+
+  <!-- Admin Controller Script -->
+  <script src="js/admin.js"></script>
+</body>
+</html>

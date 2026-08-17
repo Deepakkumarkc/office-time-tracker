@@ -1,7 +1,7 @@
 /* ==========================================================================
    AUTHENTICATION & USER STATE CONTROLLER (public/js/auth.js)
-   Manages user registration (@sagitec.com restriction), login authentication,
-   password resets, JWT token persistence, and header creation.
+   Manages user registration, login authentication, password resets,
+   JWT token persistence, and header creation.
    ========================================================================== */
 
 let currentAuthMode = 'login'; // 'login', 'register', or 'reset'
@@ -38,9 +38,9 @@ function switchAuthTab(mode) {
     forgotPasswordLink.style.display = 'none';
     passwordLabel.textContent = 'Password';
     authTitle.textContent = 'Create an Account';
-    authSubtitle.textContent = 'Register with your @sagitec.com email to start tracking';
+    authSubtitle.textContent = 'Register with your email to start tracking';
     authSubmitBtn.innerHTML = '<i class="fa-solid fa-user-plus"></i> Register Account';
-    document.getElementById('authEmail').placeholder = 'e.g. name@sagitec.com';
+    document.getElementById('authEmail').placeholder = 'e.g. name@company.com';
   } else if (mode === 'reset') {
     tabReset.classList.add('active');
     nameGroup.style.display = 'none';
@@ -50,7 +50,7 @@ function switchAuthTab(mode) {
     authTitle.textContent = 'Reset Password';
     authSubtitle.textContent = 'Enter your registered email and choose a new password';
     authSubmitBtn.innerHTML = '<i class="fa-solid fa-key"></i> Reset Password';
-    document.getElementById('authEmail').placeholder = 'e.g. name@sagitec.com';
+    document.getElementById('authEmail').placeholder = 'Enter your registered email';
   } else {
     tabLogin.classList.add('active');
     nameGroup.style.display = 'none';
@@ -60,7 +60,7 @@ function switchAuthTab(mode) {
     authTitle.textContent = 'Welcome Back';
     authSubtitle.textContent = 'Log in to track your office attendance & working hours';
     authSubmitBtn.innerHTML = '<i class="fa-solid fa-arrow-right-to-bracket"></i> Sign In';
-    document.getElementById('authEmail').placeholder = 'e.g. deepak@office.com or name@sagitec.com';
+    document.getElementById('authEmail').placeholder = 'Enter your email address';
   }
 }
 
@@ -76,9 +76,9 @@ async function handleAuthSubmit(event) {
     return;
   }
 
-  // Enforce @sagitec.com domain for registration
-  if (currentAuthMode === 'register' && !email.toLowerCase().endsWith('@sagitec.com')) {
-    showToast('Registration is restricted to official @sagitec.com email addresses.', 'error');
+  // Basic email format validation
+  if (!email.includes('@') || !email.split('@')[1].includes('.')) {
+    showToast('Please enter a valid email address.', 'error');
     return;
   }
 
@@ -169,7 +169,6 @@ function checkAuthState() {
 
   const authScreen = document.getElementById('authScreen');
   const dashboardScreen = document.getElementById('dashboardScreen');
-  const adminDashboardScreen = document.getElementById('adminDashboardScreen');
   const userProfileBadge = document.getElementById('userProfileBadge');
   const userNameDisplay = document.getElementById('userNameDisplay');
   const userAvatar = document.getElementById('userAvatar');
@@ -183,9 +182,7 @@ function checkAuthState() {
 
     if (user.role === 'ADMIN') {
       if (adminNavGroup) adminNavGroup.style.display = 'flex';
-      // Default to tracker view for rich productivity experience
       dashboardScreen.style.display = 'block';
-      adminDashboardScreen.style.display = 'none';
       const navBtnTracker = document.getElementById('navBtnTracker');
       const navBtnAdmin = document.getElementById('navBtnAdmin');
       if (navBtnTracker) navBtnTracker.classList.add('active');
@@ -193,14 +190,12 @@ function checkAuthState() {
       fetchDashboardData();
     } else {
       if (adminNavGroup) adminNavGroup.style.display = 'none';
-      adminDashboardScreen.style.display = 'none';
       dashboardScreen.style.display = 'block';
       fetchDashboardData();
     }
   } else {
     authScreen.style.display = 'block';
     dashboardScreen.style.display = 'none';
-    adminDashboardScreen.style.display = 'none';
     userProfileBadge.style.display = 'none';
     if (adminNavGroup) adminNavGroup.style.display = 'none';
   }
