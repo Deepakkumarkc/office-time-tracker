@@ -71,29 +71,29 @@ Office Tracker/
 
 ---
 
+## 🌐 1-Click Free Cloud Deployment (Render.com)
+
+The application is 100% pre-configured for free hosting on **Render.com** ($0/month):
+👉 **[Read the Full Render Deployment Manual (RENDER_DEPLOYMENT_GUIDE.md)](RENDER_DEPLOYMENT_GUIDE.md)** for exact click-by-click instructions, environment variables, and zero-downtime tips.
+
+---
+
 ## 🚀 Step-by-Step Configuration & Local Setup
 
 ### Prerequisites
-- **Python 3.8+** (installed on most systems) OR **Node.js 16+** (if choosing Node setup).
+- **Python 3.8+** (installed on Windows, macOS, Linux).
 - A web browser (Chrome, Edge, Firefox, Safari).
 
 ---
 
-### Option 1: Running with Python (Recommended — 0 Setup / 0 Dependencies)
-
-Since Python 3 is pre-installed on Windows/macOS/Linux:
+### Running Locally with Python (0 External Dependencies Required)
 
 1. Open your terminal in the project directory:
-   ```powershell
-   cd "c:\Users\deepakkumar.kc\OneDrive - Sagitec Solutions, LLC\D-DRIVE\PROJECT\Office Tracker"
-   ```
-
-2. Start the Python server:
    ```powershell
    python app.py
    ```
 
-3. Open your browser and navigate to:
+2. Open your browser and navigate to:
    ```text
    http://localhost:5000
    ```
